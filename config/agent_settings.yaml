@@ -1,0 +1,29 @@
+agents:
+  monitor:
+    price_change_threshold: 0.03
+    volume_spike_multiplier: 2.0
+    check_interval_seconds: 60
+    arbitrage_threshold: 0.005
+    card_price_threshold: 0.05
+
+  research:
+    timeout_seconds: 120
+    max_sources: 5
+    confidence_threshold: 0.6
+
+  risk:
+    max_position_pct: 0.20
+    max_sector_pct: 0.40
+    max_correlation: 0.80
+
+  autonomy:
+    small_position_limit: 10000
+    require_human_approval: true
+
+  decision:
+    timeout_minutes: 30
+    escalation_threshold: 0.9
+
+  daily_report:
+    send_time: "08:00"
+    timezone: "Asia/Shanghai"

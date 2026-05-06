@@ -1,0 +1,4 @@
+database:
+  path: "${DB_PATH:-data/broker_agents.db}"
+  backup_path: "${DB_BACKUP_PATH:-data/backups}"
+  auto_backup_hours: 24
