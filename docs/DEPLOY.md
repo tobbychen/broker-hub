@@ -4,7 +4,7 @@
 
 - E3-1280 V2 workstation with Ubuntu 24.04 LTS installed
 - Existing Python 3.12+ environment
-- Cloudflare account (free tier)
+- Tailscale account (free, from tailscale.com) — for remote access
 - Telegram bot token (free, from @BotFather)
 - eBay Developer account (free, from developer.ebay.com) — for sports card price monitoring
 - MiniMax API key (already purchased)
@@ -57,25 +57,23 @@ TELEGRAM_CHAT_ID=your_telegram_chat_id_here
 
 ---
 
-## Step 3: Cloudflare Tunnel Setup
+## Step 3: Tailscale Setup (Remote Access)
 
 ```bash
-cd infra/cloudflared
+cd infra/tailscale
 chmod +x setup.sh
 ./setup.sh
 ```
 
-Follow the on-screen instructions to:
-1. Install cloudflared
-2. Create a tunnel at dash.cloudflare.com
-3. Get your tunnel token
+Follow the on-screen instructions:
+1. Sign up at tailscale.com with your email (free, no card needed)
+2. Run `sudo tailscale up --operator=$USER` on your E3 workstation
+3. Authorize the device in your Tailscale admin console
+4. Install Tailscale app on your phone and laptop
 
-Run the tunnel:
-```bash
-cloudflared tunnel run --token YOUR_TUNNEL_TOKEN_HERE
-```
-
-The dashboard will be accessible at `https://your-tunnel-name.trycloudflare.com`
+**Access the dashboard:**
+- From Tailscale app: `http://broker-agents.<your-tailnet>.ts.net:8000`
+- Or via IP: `http://<tailscale-ip>:8000`
 
 ---
 
@@ -181,7 +179,7 @@ broker-agents/
 │   │   └── routers/          # API endpoints
 │   └── frontend/            # Vue 3 frontend
 ├── telegram/                  # Telegram notification bot
-├── infra/                    # Infrastructure (Cloudflare Tunnel)
+├── infra/                    # Infrastructure (Tailscale)
 ├── config/                   # YAML config files
 ├── database/                 # SQL schema
 └── tests/                    # Tests
@@ -193,7 +191,7 @@ broker-agents/
 
 **Dashboard not loading:**
 - Check backend is running: `curl http://localhost:8000/api/portfolio/summary`
-- Check Cloudflare Tunnel is connected: `cloudflared tunnel --version`
+- Check Tailscale is connected: `tailscale status`
 
 **No market data:**
 - AKShare may fail outside China — ensure VPN is connected
