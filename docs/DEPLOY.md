@@ -6,6 +6,7 @@
 - Existing Python 3.12+ environment
 - Cloudflare account (free tier)
 - Discord bot token (free, from Discord Developer Portal)
+- eBay Developer account (free, from developer.ebay.com) — for sports card price monitoring
 - MiniMax API key (already purchased)
 - VPN connection (for accessing international APIs from Beijing)
 
@@ -45,7 +46,9 @@ GLM_API_KEY=your_glm_key_here
 KIMI_API_KEY=your_kimi_key_here
 BINANCE_API_KEY=your_binance_key_here
 BINANCE_SECRET=your_binance_secret_here
-CARDLADDER_API_KEY=your_card_ladder_key_here
+
+# eBay API (free, from developer.ebay.com)
+EBAY_API_KEY=your_ebay_oauth_token_here
 
 # Discord bot
 DISCORD_BOT_TOKEN=your_discord_bot_token_here
@@ -168,7 +171,7 @@ sudo systemctl start broker-agents-dashboard
 ```
 broker-agents/
 ├── agents/                  # Agent code
-│   ├── monitor/             # Market monitors (AKShare, Binance, Yahoo, Card Ladder)
+│   ├── monitor/             # Market monitors (AKShare, Binance, Yahoo, eBay)
 │   ├── dispatcher/          # LangGraph dispatcher agent
 │   ├── research_analyst/     # Research agent
 │   └── trade_executor/      # Trade executor agent

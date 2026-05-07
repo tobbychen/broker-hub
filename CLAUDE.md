@@ -74,7 +74,7 @@ The graph is a singleton (`get_dispatcher()`). Tools (`agents/dispatcher/tools.p
 
 ### Two-Stage Monitoring
 
-Stage 1 (monitor scripts, no LLM cost) runs continuously via `agents/monitor/scheduler.py`. Each monitor (`binance_monitor.py`, `akshare_monitor.py`, `yfinance_monitor.py`, `card_ladder_monitor.py`) inherits `BaseMonitor` and returns `Alert` dataclasses. A threshold check determines whether an alert fires.
+Stage 1 (monitor scripts, no LLM cost) runs continuously via `agents/monitor/scheduler.py`. Each monitor (`binance_monitor.py`, `akshare_monitor.py`, `yfinance_monitor.py`, `ebay_monitor.py`) inherits `BaseMonitor` and returns `Alert` dataclasses. A threshold check determines whether an alert fires.
 
 Stage 2 (LLM) is only triggered when the Dispatcher receives an alert. The LLM decides whether the alert is relevant to the portfolio before invoking the Research Analyst.
 

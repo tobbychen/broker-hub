@@ -24,9 +24,24 @@ market_data:
     secret: ${BINANCE_SECRET}
   yfinance:
     enabled: true
-  card_ladder:
+  ebay:
     enabled: true
-    api_key: ${CARDLADDER_API_KEY}
+    api_key: ${EBAY_API_KEY}
+    # Watched cards — add your cards here
+    watched_cards:
+      - id: pika_001
+        name: Charizard
+        set_name: Base Set
+        year: 1999
+        category: pokemon
+        min_grade: "PSA 10"
+        last_price: 5000
+      - id: nba_001
+        name: Michael Jordan
+        set_name: 1986 Fleer
+        category: basketball
+        min_grade: "PSA 10"
+        last_price: 150000
 
 discord:
   enabled: true

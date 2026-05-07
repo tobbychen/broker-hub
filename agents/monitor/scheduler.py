@@ -6,7 +6,7 @@ from .base import Alert
 from .akshare_monitor import AKShareMonitor
 from .binance_monitor import BinanceMonitor
 from .yfinance_monitor import YFinanceMonitor
-from .card_ladder_monitor import CardLadderMonitor
+from .ebay_monitor import EbayMonitor
 from ..config import get_agent_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -16,7 +16,7 @@ MONITORS = [
     BinanceMonitor(),
     AKShareMonitor(),
     YFinanceMonitor(),
-    CardLadderMonitor(),
+    EbayMonitor(),
 ]
 
 
