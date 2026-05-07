@@ -5,7 +5,7 @@
 - E3-1280 V2 workstation with Ubuntu 24.04 LTS installed
 - Existing Python 3.12+ environment
 - Cloudflare account (free tier)
-- Discord bot token (free, from Discord Developer Portal)
+- Telegram bot token (free, from @BotFather)
 - eBay Developer account (free, from developer.ebay.com) — for sports card price monitoring
 - MiniMax API key (already purchased)
 - VPN connection (for accessing international APIs from Beijing)
@@ -50,9 +50,9 @@ BINANCE_SECRET=your_binance_secret_here
 # eBay API (free, from developer.ebay.com)
 EBAY_API_KEY=your_ebay_oauth_token_here
 
-# Discord bot
-DISCORD_BOT_TOKEN=your_discord_bot_token_here
-DISCORD_CHANNEL_ID=your_channel_id_here
+# Telegram notification bot (free, from @BotFather)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_telegram_chat_id_here
 ```
 
 ---
@@ -125,16 +125,13 @@ python -m agents.monitor.scheduler
 
 ---
 
-## Step 8: Discord Bot Setup
+## Step 8: Telegram Bot Setup
 
-1. Go to https://discord.com/developers/applications
-2. Create a new application → Bot
-3. Enable Message Content Intent
-4. Copy the bot token to your `.env` file
-5. Invite the bot to your server with these permissions:
-   - Send Messages
-   - Embed Links
-   - Use Slash Commands
+1. Open Telegram → search for **@BotFather**
+2. Send `/newbot` → follow prompts → copy the bot token
+3. Search for your new bot by its username → click **Start**
+4. Visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` to find your **chat_id**
+5. Add both to your `.env` file
 
 ---
 
@@ -183,7 +180,7 @@ broker-agents/
 │   │   ├── models/           # Pydantic schemas
 │   │   └── routers/          # API endpoints
 │   └── frontend/            # Vue 3 frontend
-├── discord/                  # Discord notification bot
+├── telegram/                  # Telegram notification bot
 ├── infra/                    # Infrastructure (Cloudflare Tunnel)
 ├── config/                   # YAML config files
 ├── database/                 # SQL schema

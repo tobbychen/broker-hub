@@ -43,7 +43,8 @@ market_data:
         min_grade: "PSA 10"
         last_price: 150000
 
-discord:
+notification:
   enabled: true
-  bot_token: ${DISCORD_BOT_TOKEN}
-  channel_id: ${DISCORD_CHANNEL_ID}
+  # Telegram — get token from @BotFather, chat_id from @userinfobot
+  bot_token: ${TELEGRAM_BOT_TOKEN}
+  channel_id: ${TELEGRAM_CHAT_ID}  # Your Telegram chat ID or group ID

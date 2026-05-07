@@ -10,6 +10,7 @@ from dashboard.backend.config import (
     get_agent_settings,
     get_discord_config,
     get_database_config,
+    get_notification_config,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "get_agent_settings",
     "get_discord_config",
     "get_database_config",
+    "get_notification_config",
 ]

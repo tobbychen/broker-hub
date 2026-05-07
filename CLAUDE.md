@@ -98,7 +98,7 @@ Key tables: `positions`, `decisions`, `trades`, `decision_chat`, `daily_reports`
 
 ## File Locations
 
-- `config/api_providers.yaml` — LLM + market data + Discord credentials
+- `config/api_providers.yaml` — LLM + market data + notification (Telegram) credentials
 - `config/agent_settings.yaml` — monitor thresholds, autonomy limits, decision timeouts
 - `config/database.yaml` — SQLite path
 - `agents/dispatcher/graph.py` — LangGraph dispatcher singleton

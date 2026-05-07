@@ -55,3 +55,7 @@ def get_database_config() -> dict:
 
 def get_discord_config() -> dict:
     return load_config("api_providers").get("discord", {})
+
+
+def get_notification_config() -> dict:
+    return load_config("api_providers").get("notification", {})
