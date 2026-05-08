@@ -77,22 +77,26 @@ class AKShareMonitor(BaseMonitor):
         return alerts
 
     async def _check_stocks(self) -> list[Alert]:
-        """Check individual stocks for price anomalies."""
+        """Check individual stocks for price anomalies.
+
+        Uses daily OHLCV — 1-2s per stock, no bulk fetch needed.
+        Compares today's close vs yesterday's close for % change.
+        """
         alerts = []
         stocks = self.stocks or []
-
         if not stocks:
             return alerts
 
-        try:
-            # Fetch all A-share spot data (one API call for all stocks)
-            df = ak.stock_zh_a_spot_em()
-            symbol_map = {str(row["代码"]): row for _, row in df.iterrows()}
-        except Exception:
-            return alerts
+        today = datetime.now().strftime("%Y%m%d")
+        yesterday = (
+            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            .timestamp() - 86400
+        )
+        yesterday_str = datetime.fromtimestamp(yesterday).strftime("%Y%m%d")
 
         for stock in stocks:
             code = stock.get("code")
+            name = stock.get("name", code)
             last_price = stock.get("last_price")
             threshold = stock.get("threshold", self.threshold)
 
@@ -100,40 +104,55 @@ class AKShareMonitor(BaseMonitor):
                 continue
 
             try:
-                row = symbol_map.get(code)
-                if row is None:
+                # Fetch last 2 days of daily bars (fast: ~1.5s per stock)
+                df = ak.stock_zh_a_hist(
+                    symbol=code,
+                    period="daily",
+                    adjust="qfq",
+                    start_date=yesterday_str,
+                    end_date=today,
+                )
+                if df is None or df.empty:
                     continue
 
-                current_price = float(row.get("最新价", 0))
-                change_pct = float(row.get("涨跌幅", 0))
+                # Latest bar = today, previous = yesterday
+                today_bar = df.iloc[-1]
+                prev_bar = df.iloc[-2] if len(df) >= 2 else None
 
-                # Alert on large % move
-                if abs(change_pct) > threshold * 100:
-                    alerts.append(Alert(
-                        source="akshare",
-                        alert_type="price_spike",
-                        symbol=code,
-                        exchange=row.get("交易所", "SSE/SZSE"),
-                        details={
-                            "name": row.get("名称", code),
-                            "current": current_price,
-                            "change_pct": change_pct,
-                        },
-                        timestamp=datetime.now(),
-                        priority="high" if abs(change_pct) > 5 else "normal",
-                    ))
+                current_price = float(today_bar["收盘"])
+                prev_close = float(prev_bar["收盘"]) if prev_bar is not None else None
+
+                # Alert on % move vs yesterday close
+                if prev_close and prev_close > 0:
+                    change_pct = (current_price - prev_close) / prev_close * 100
+                    if abs(change_pct) > threshold * 100:
+                        alerts.append(Alert(
+                            source="akshare",
+                            alert_type="price_spike",
+                            symbol=code,
+                            exchange="SSE/SZSE",
+                            details={
+                                "name": name,
+                                "current": current_price,
+                                "prev_close": prev_close,
+                                "change_pct": round(change_pct, 2),
+                            },
+                            timestamp=datetime.now(),
+                            priority="high" if abs(change_pct) > 5 else "normal",
+                        ))
 
                 # Alert on absolute price change from last recorded
                 if last_price and current_price != last_price:
                     change_pct_abs = abs(current_price - last_price) / last_price
                     if change_pct_abs > threshold:
+                        ref_price = prev_close if prev_close else last_price
                         alerts.append(Alert(
                             source="akshare",
                             alert_type="price_move",
                             symbol=code,
-                            exchange=row.get("交易所", "SSE/SZSE"),
+                            exchange="SSE/SZSE",
                             details={
-                                "name": row.get("名称", code),
+                                "name": name,
                                 "current_price": current_price,
                                 "previous_price": last_price,
                                 "change_pct": round(change_pct_abs * 100, 2),
@@ -142,7 +161,7 @@ class AKShareMonitor(BaseMonitor):
                             priority="normal",
                         ))
 
-            except (ValueError, TypeError, KeyError):
+            except Exception:
                 continue
 
         return alerts
