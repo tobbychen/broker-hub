@@ -1,5 +1,6 @@
 """Binance crypto price monitor."""
 import asyncio
+import os
 from datetime import datetime
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
@@ -19,12 +20,22 @@ class BinanceMonitor(BaseMonitor):
     def __init__(self):
         super().__init__(get_market_data_config().get("binance", {}))
         self._client: Client | None = None
+        self._proxies = self._detect_proxy()
+
+    def _detect_proxy(self) -> dict | None:
+        """Read HTTP_PROXY / HTTPS_PROXY from environment."""
+        for var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
+            val = os.environ.get(var)
+            if val:
+                return {"http": val, "https": val}
+        return None
 
     def _get_client(self) -> Client:
         if self._client is None:
             self._client = Client(
                 api_key=self.config.get("api_key") or "",
                 api_secret=self.config.get("secret") or "",
+                requests_params={"proxies": self._proxies} if self._proxies else {},
             )
         return self._client
 

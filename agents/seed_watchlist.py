@@ -21,29 +21,29 @@ async def seed():
             "exchange": "SSE",
             "notes": "贵州茅台",
         },
-        # Crypto (exchange=Binance, symbols stored without USDT suffix)
+        # Crypto (exchange=OKX, symbols stored without -USDT suffix)
         {
             "asset_class": "crypto",
             "symbol": "BTC",
-            "exchange": "Binance",
+            "exchange": "OKX",
             "notes": "Bitcoin",
         },
         {
             "asset_class": "crypto",
             "symbol": "ETH",
-            "exchange": "Binance",
+            "exchange": "OKX",
             "notes": "Ethereum",
         },
         {
             "asset_class": "crypto",
             "symbol": "SOL",
-            "exchange": "Binance",
+            "exchange": "OKX",
             "notes": "Solana",
         },
         {
             "asset_class": "crypto",
             "symbol": "BNB",
-            "exchange": "Binance",
+            "exchange": "OKX",
             "notes": "Binance Coin",
         },
         # Sports cards

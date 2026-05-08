@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from .base import Alert
 from .akshare_monitor import AKShareMonitor
 from .binance_monitor import BinanceMonitor
+from .okx_monitor import OKXMonitor
 from .yfinance_monitor import YFinanceMonitor
 from .ebay_monitor import EbayMonitor
 from ..config import get_agent_settings
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 MONITORS = [
     BinanceMonitor(),
+    OKXMonitor(),
     AKShareMonitor(),
     YFinanceMonitor(),
     EbayMonitor(),

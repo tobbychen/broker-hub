@@ -18,6 +18,8 @@ llm:
 market_data:
   akshare:
     enabled: true
+  okx:
+    enabled: true
   binance:
     enabled: true
     api_key: ${BINANCE_API_KEY}
