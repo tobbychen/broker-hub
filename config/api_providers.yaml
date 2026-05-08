@@ -18,6 +18,10 @@ llm:
 market_data:
   akshare:
     enabled: true
+    stocks:
+      - code: "600519"
+        name: "贵州茅台"
+        threshold: 0.03
   binance:
     enabled: true
     api_key: ${BINANCE_API_KEY}
