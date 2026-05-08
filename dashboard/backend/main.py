@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
-from .routers import portfolio, decisions, chat, daily_report, agent_status
+from .routers import portfolio, decisions, chat, daily_report, agent_status, watchlist
 
 
 @asynccontextmanager
@@ -31,3 +31,4 @@ app.include_router(decisions.router, prefix="/api/decisions", tags=["decisions"]
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(daily_report.router, prefix="/api/daily-report", tags=["daily-report"])
 app.include_router(agent_status.router, prefix="/api/agent-status", tags=["agent-status"])
+app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])

@@ -18,10 +18,6 @@ llm:
 market_data:
   akshare:
     enabled: true
-    stocks:
-      - code: "600519"
-        name: "贵州茅台"
-        threshold: 0.03
   binance:
     enabled: true
     api_key: ${BINANCE_API_KEY}
@@ -31,21 +27,6 @@ market_data:
   ebay:
     enabled: true
     api_key: ${EBAY_API_KEY}
-    # Watched cards — add your cards here
-    watched_cards:
-      - id: pika_001
-        name: Charizard
-        set_name: Base Set
-        year: 1999
-        category: pokemon
-        min_grade: "PSA 10"
-        last_price: 5000
-      - id: nba_001
-        name: Michael Jordan
-        set_name: 1986 Fleer
-        category: basketball
-        min_grade: "PSA 10"
-        last_price: 150000
 
 notification:
   enabled: true

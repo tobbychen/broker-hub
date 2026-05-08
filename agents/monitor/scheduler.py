@@ -13,6 +13,7 @@ from .binance_monitor import BinanceMonitor
 from .yfinance_monitor import YFinanceMonitor
 from .ebay_monitor import EbayMonitor
 from ..config import get_agent_settings
+from .. import database as agents_db
 from telegram.bot import get_notifier
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -42,6 +43,7 @@ async def run_monitor_cycle() -> list[Alert]:
 
 async def send_watchlist_card():
     """Fetch and send a watchlist card to Telegram."""
+    await agents_db.init_db()
     all_items = []
     for monitor in MONITORS:
         try:
@@ -72,6 +74,7 @@ async def scheduler_loop():
 
 
 async def main():
+    await agents_db.init_db()
     parser = argparse.ArgumentParser(description="Broker agents monitor scheduler")
     parser.add_argument("--watchlist", action="store_true", help="Send watchlist card to Telegram and exit")
     args = parser.parse_args()

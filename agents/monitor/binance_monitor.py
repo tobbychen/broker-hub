@@ -4,12 +4,14 @@ from datetime import datetime
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from ..config import get_market_data_config
+from .. import database as db
 from .base import BaseMonitor, Alert
+
+# Default symbols when watchlist is empty in SQLite
+DEFAULT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
 
 
 class BinanceMonitor(BaseMonitor):
-    SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
-
     @property
     def name(self) -> str:
         return "binance"
@@ -29,12 +31,23 @@ class BinanceMonitor(BaseMonitor):
     def is_market_open(self) -> bool:
         return True  # Binance 24/7
 
+    async def _get_symbols(self) -> list[str]:
+        """Get symbols from SQLite watchlist, fallback to defaults."""
+        try:
+            items = await db.get_watchlist_items("crypto")
+            if items:
+                return [item["symbol"] + "USDT" for item in items]
+        except Exception:
+            pass
+        return DEFAULT_SYMBOLS
+
     async def check(self) -> list[Alert]:
         if not self.config.get("enabled", True):
             return []
 
         alerts = []
-        for symbol in self.SYMBOLS:
+        symbols = await self._get_symbols()
+        for symbol in symbols:
             try:
                 alert = await self._check_symbol(symbol)
                 if alert:
@@ -61,11 +74,23 @@ class BinanceMonitor(BaseMonitor):
         avg_price = sum(prices) / len(prices)
         change_pct = abs(price - avg_price) / avg_price
 
+        # Write price to market_cache
+        base_symbol = symbol.replace("USDT", "")
+        try:
+            await db.set_market_cache(
+                symbol=base_symbol,
+                data_type="latest_price",
+                raw_data={"price": price, "avg_5min": avg_price},
+                exchange="Binance",
+            )
+        except Exception:
+            pass
+
         if change_pct > threshold:
             return Alert(
                 source="binance",
                 alert_type="arbitrage",
-                symbol=symbol.replace("USDT", ""),
+                symbol=base_symbol,
                 exchange="Binance",
                 details={
                     "current_price": price,
@@ -81,7 +106,8 @@ class BinanceMonitor(BaseMonitor):
     async def get_watchlist(self) -> list[dict]:
         """Return current prices for all tracked symbols."""
         items = []
-        for symbol in self.SYMBOLS:
+        symbols = await self._get_symbols()
+        for symbol in symbols:
             try:
                 client = self._get_client()
                 ticker = client.get_symbol_ticker(symbol=symbol)

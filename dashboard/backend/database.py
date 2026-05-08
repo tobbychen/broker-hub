@@ -228,6 +228,142 @@ async def log_agent_event(agent_name: str, event_type: str, details: str = "") -
         await db.close()
 
 
+# ---- Watchlist helpers ----
+
+async def upsert_watchlist_item(
+    asset_class: str,
+    symbol: str,
+    exchange: str = "",
+    notes: str = "",
+) -> int:
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT INTO watchlist (asset_class, symbol, exchange, notes)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(asset_class, symbol, exchange)
+            DO UPDATE SET notes=excluded.notes
+            """,
+            (asset_class, symbol, exchange, notes),
+        )
+        await db.commit()
+        row = await db.fetchone(
+            "SELECT id FROM watchlist WHERE asset_class=? AND symbol=? AND exchange=?",
+            (asset_class, symbol, exchange),
+        )
+        return row["id"] if row else 0
+    finally:
+        await db.close()
+
+
+async def get_watchlist_items(asset_class: str = "") -> list[dict]:
+    db = await get_db()
+    try:
+        if asset_class:
+            rows = await db.fetchall(
+                "SELECT * FROM watchlist WHERE asset_class=? ORDER BY symbol",
+                (asset_class,),
+            )
+        else:
+            rows = await db.fetchall("SELECT * FROM watchlist ORDER BY asset_class, symbol")
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def delete_watchlist_item(watchlist_id: int) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "DELETE FROM watchlist WHERE id=?",
+            (watchlist_id,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+# ---- Market cache helpers ----
+
+async def set_market_cache(
+    symbol: str,
+    data_type: str,
+    raw_data: str,
+    exchange: str = "",
+) -> None:
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT INTO market_cache (symbol, exchange, data_type, raw_data, fetched_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(symbol, exchange, data_type)
+            DO UPDATE SET raw_data=excluded.raw_data, fetched_at=CURRENT_TIMESTAMP
+            """,
+            (symbol, exchange, data_type, raw_data),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_market_cache_latest(
+    symbol: str,
+    data_type: str,
+    exchange: str = "",
+    max_age_seconds: int = 300,
+) -> Optional[dict]:
+    """Get cached market data if fresh enough, else None."""
+    db = await get_db()
+    try:
+        row = await db.fetchone(
+            """
+            SELECT * FROM market_cache
+            WHERE symbol=? AND exchange=? AND data_type=?
+            AND (strftime('%s','now') - strftime('%s', fetched_at)) < ?
+            """,
+            (symbol, exchange, data_type, max_age_seconds),
+        )
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def get_watchlist_prices(asset_class: str = "") -> list[dict]:
+    """Get latest cached prices for all watchlist items."""
+    db = await get_db()
+    try:
+        if asset_class:
+            rows = await db.fetchall(
+                """
+                SELECT w.*, m.raw_data, m.fetched_at
+                FROM watchlist w
+                LEFT JOIN market_cache m
+                    ON m.symbol = w.symbol AND m.exchange = w.exchange
+                    AND m.data_type = 'latest_price'
+                WHERE w.asset_class = ?
+                ORDER BY w.asset_class, w.symbol
+                """,
+                (asset_class,),
+            )
+        else:
+            rows = await db.fetchall(
+                """
+                SELECT w.*, m.raw_data, m.fetched_at
+                FROM watchlist w
+                LEFT JOIN market_cache m
+                    ON m.symbol = w.symbol AND m.exchange = w.exchange
+                    AND m.data_type = 'latest_price'
+                ORDER BY w.asset_class, w.symbol
+                """,
+            )
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
 # ---- Portfolio summary ----
 
 async def get_portfolio_summary() -> dict:
