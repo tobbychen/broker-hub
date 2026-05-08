@@ -109,6 +109,46 @@ class TelegramNotifier:
             "text": message,
         })
 
+    async def send_watchlist(self, items: list[dict]):
+        """Send a watchlist card showing current prices of all monitored assets."""
+        if not self.enabled or not items:
+            return
+
+        # Build per-exchange sections
+        sections = {}
+        for item in items:
+            exchange = item.get("exchange", "Other")
+            sections.setdefault(exchange, []).append(item)
+
+        lines = ["📋 <b>实时行情监控</b>", ""]
+        for exchange, assets in sections.items():
+            lines.append(f"<b>{exchange}</b>")
+            for a in assets:
+                symbol = a.get("symbol", "")
+                name = a.get("name", "")
+                price = a.get("price")
+                change = a.get("change_pct") or a.get("change_1h_pct", 0)
+                arrow = "▲" if change >= 0 else "▼"
+                color = "+" if change >= 0 else ""
+                if price is not None:
+                    if isinstance(price, float):
+                        if price > 100:
+                            price_str = f"{price:,.2f}"
+                        else:
+                            price_str = f"{price:.6f}"
+                    else:
+                        price_str = str(price)
+                    lines.append(f"{arrow} {symbol} {price_str}  {color}{change:+.2f}%")
+                else:
+                    lines.append(f"{arrow} {symbol} —")
+            lines.append("")
+
+        await self._send({
+            "chat_id": self.chat_id,
+            "text": "\n".join(lines).strip(),
+            "parse_mode": "HTML",
+        })
+
 
 _notifier: TelegramNotifier | None = None
 

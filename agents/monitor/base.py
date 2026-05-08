@@ -36,3 +36,7 @@ class BaseMonitor(ABC):
     @abstractmethod
     def is_market_open(self) -> bool:
         pass
+
+    async def get_watchlist(self) -> list[dict]:
+        """Return current prices for all watched assets. Override per monitor."""
+        return []

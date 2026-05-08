@@ -165,3 +165,48 @@ class AKShareMonitor(BaseMonitor):
                 continue
 
         return alerts
+
+    async def get_watchlist(self) -> list[dict]:
+        """Return current prices for all configured stocks."""
+        items = []
+        stocks = self.stocks or []
+        if not stocks:
+            return items
+
+        today = datetime.now().strftime("%Y%m%d")
+        yesterday_ts = datetime.now().timestamp() - 86400
+        yesterday_str = datetime.fromtimestamp(yesterday_ts).strftime("%Y%m%d")
+
+        for stock in stocks:
+            code = stock.get("code")
+            name = stock.get("name", code)
+            if not code:
+                continue
+            try:
+                df = ak.stock_zh_a_hist(
+                    symbol=code,
+                    period="daily",
+                    adjust="qfq",
+                    start_date=yesterday_str,
+                    end_date=today,
+                )
+                if df is None or df.empty:
+                    continue
+                today_bar = df.iloc[-1]
+                prev_bar = df.iloc[-2] if len(df) >= 2 else None
+                current_price = float(today_bar["收盘"])
+                prev_close = float(prev_bar["收盘"]) if prev_bar is not None else None
+                change_pct = 0.0
+                if prev_close and prev_close > 0:
+                    change_pct = (current_price - prev_close) / prev_close * 100
+                items.append({
+                    "symbol": code,
+                    "name": name,
+                    "price": current_price,
+                    "prev_close": prev_close,
+                    "change_pct": round(change_pct, 2),
+                    "exchange": "SSE/SZSE",
+                })
+            except Exception:
+                continue
+        return items

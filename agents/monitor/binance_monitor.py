@@ -77,3 +77,25 @@ class BinanceMonitor(BaseMonitor):
                 priority="high" if change_pct > 0.01 else "normal",
             )
         return None
+
+    async def get_watchlist(self) -> list[dict]:
+        """Return current prices for all tracked symbols."""
+        items = []
+        for symbol in self.SYMBOLS:
+            try:
+                client = self._get_client()
+                ticker = client.get_symbol_ticker(symbol=symbol)
+                price = float(ticker["price"])
+                klines = client.get_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=2)
+                change_1h = 0.0
+                if len(klines) >= 2:
+                    change_1h = (price - float(klines[-2][4])) / float(klines[-2][4]) * 100
+                items.append({
+                    "symbol": symbol.replace("USDT", ""),
+                    "price": price,
+                    "change_1h_pct": round(change_1h, 2),
+                    "exchange": "Binance",
+                })
+            except Exception:
+                continue
+        return items
