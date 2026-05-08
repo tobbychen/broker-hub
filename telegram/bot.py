@@ -34,7 +34,7 @@ class TelegramNotifier:
                 resp = await client.post(self._endpoint("sendMessage"), json=payload)
                 if resp.status_code == 200:
                     return True
-                logger.warning(f"[telegram] API error: {resp.status_code} {resp.text[:100]}")
+                logger.warning(f"[telegram] API error: {resp.status_code} {resp.text[:200]}")
                 return False
         except httpx.RequestError as e:
             logger.error(f"[telegram] Request error: {e}")
@@ -50,7 +50,7 @@ class TelegramNotifier:
         risk_level: str,
         dashboard_url: str = "",
     ):
-        """Send a rich decision alert card to Telegram."""
+        """Send a rich decision alert card to Telegram using HTML."""
         if not self.enabled:
             return
 
@@ -58,22 +58,22 @@ class TelegramNotifier:
         risk_text = {"low": "低风险", "medium": "中风险", "high": "高风险"}.get(risk_level, risk_level)
 
         text = (
-            f"📊 *{decision_type.upper()} {symbol}*\n"
+            f"📊 <b>{decision_type.upper()} {symbol}</b>\n"
             f"{risk_emoji} {risk_text}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
+            f"────────────────────\n"
             f"置信度: {confidence:.0%}\n"
             f"标的: {symbol}\n"
-            f"ID: `{decision_id}`\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
+            f"ID: {decision_id}\n"
+            f"────────────────────\n"
             f"{reasoning[:200]}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🔗 [打开仪表盘审批]({dashboard_url})"
+            f"────────────────────\n"
+            f"🔗 <a href='{dashboard_url}'>打开仪表盘审批</a>"
         )
 
         await self._send({
             "chat_id": self.chat_id,
             "text": text,
-            "parse_mode": "MarkdownV2",
+            "parse_mode": "HTML",
             "reply_markup": {
                 "inline_keyboard": [[
                     {"text": "✅ 批准", "callback_data": f"approve_{decision_id}"},
@@ -89,17 +89,17 @@ class TelegramNotifier:
             return
 
         text = (
-            f"📋 *每日早间简报*\\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
+            f"📋 <b>每日早间简报</b>\n"
+            f"────────────────────\n"
             f"{summary[:300] if summary else '简报已生成'}\n"
-            f"━━━━━━━━━━━━━━━━━━\\n"
-            f"🔗 [查看完整日报]({dashboard_url})"
+            f"────────────────────\n"
+            f"🔗 <a href='{dashboard_url}'>查看完整日报</a>"
         )
 
         await self._send({
             "chat_id": self.chat_id,
             "text": text,
-            "parse_mode": "MarkdownV2",
+            "parse_mode": "HTML",
         })
 
     async def send_text(self, message: str):
@@ -107,7 +107,6 @@ class TelegramNotifier:
         await self._send({
             "chat_id": self.chat_id,
             "text": message,
-            "parse_mode": "MarkdownV2",
         })
 
 
