@@ -1,8 +1,13 @@
-"""eBay Browse API monitor for sports card prices."""
+"""eBay Browse API monitor for sports card prices.
+
+Uses OAuth2 client credentials flow to obtain access tokens.
+Tokens are cached and auto-refreshed on expiry.
+"""
 import asyncio
-import httpx
 import logging
-from datetime import datetime
+import os
+import httpx
+from datetime import datetime, timedelta
 from ..config import get_market_data_config
 from .. import database as db
 from .base import BaseMonitor, Alert
@@ -14,14 +19,7 @@ class EbayMonitor(BaseMonitor):
     """Monitor sports card prices via eBay Browse API."""
 
     BASE_URL = "https://api.ebay.com/buy/browse/v1"
-
-    CARD_CATEGORIES = {
-        "pokemon": "26104",
-        "basketball": "212",
-        "baseball": "213",
-        "football": "4851",
-        "soccer": "20808",
-    }
+    TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 
     @property
     def name(self) -> str:
@@ -30,9 +28,52 @@ class EbayMonitor(BaseMonitor):
     def __init__(self):
         super().__init__(get_market_data_config().get("ebay", {}))
         self.threshold = self.config.get("price_change_threshold", 0.05)
+        self._access_token: str | None = None
+        self._token_expires_at: datetime | None = None
+        self._proxies = self._detect_proxy()
+
+    def _detect_proxy(self) -> str | None:
+        for var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
+            val = os.environ.get(var)
+            if val:
+                return val
+        return None
 
     def is_market_open(self) -> bool:
         return True
+
+    async def _get_token(self) -> str | None:
+        """Get a valid OAuth2 access token, refreshing if expired."""
+        if self._access_token and self._token_expires_at and datetime.now() < self._token_expires_at:
+            return self._access_token
+
+        client_id = self.config.get("client_id")
+        client_secret = self.config.get("client_secret")
+        if not client_id or not client_secret:
+            logger.warning("[ebay] No client_id/client_secret configured")
+            return None
+
+        data = {
+            "grant_type": "client_credentials",
+            "scope": "https://api.ebay.com/oauth/api_scope",
+        }
+        auth = httpx.BasicAuth(client_id, client_secret)
+
+        try:
+            async with httpx.AsyncClient(proxy=self._proxies, timeout=15) as client:
+                resp = await client.post(self.TOKEN_URL, data=data, auth=auth)
+                if resp.status_code != 200:
+                    logger.warning(f"[ebay] Token request failed: {resp.status_code} {resp.text[:200]}")
+                    return None
+                token_data = resp.json()
+                self._access_token = token_data["access_token"]
+                expires_in = int(token_data.get("expires_in", 3600))
+                self._token_expires_at = datetime.now() + timedelta(seconds=expires_in - 60)
+                logger.info(f"[ebay] Got access token, expires in {expires_in}s")
+                return self._access_token
+        except httpx.RequestError as e:
+            logger.error(f"[ebay] Token request error: {e}")
+            return None
 
     def _parse_notes(self, notes: str) -> dict:
         """Parse pipe-separated card metadata from watchlist notes field.
@@ -55,9 +96,8 @@ class EbayMonitor(BaseMonitor):
         if not self.config.get("enabled", True):
             return []
 
-        api_key = self.config.get("api_key")
-        if not api_key:
-            logger.warning("[ebay] No API key configured, skipping check")
+        token = await self._get_token()
+        if not token:
             return []
 
         alerts = []
@@ -69,7 +109,7 @@ class EbayMonitor(BaseMonitor):
 
         for card in watched_cards:
             try:
-                alert = await self._check_card(api_key, card)
+                alert = await self._check_card(token, card)
                 if alert:
                     alerts.append(alert)
             except Exception as e:
@@ -78,11 +118,11 @@ class EbayMonitor(BaseMonitor):
         self.last_check = datetime.now()
         return alerts
 
-    async def _check_card(self, api_key: str, card: dict) -> Alert | None:
+    async def _check_card(self, token: str, card: dict) -> Alert | None:
         """Check a single card's price against recent sold listings."""
         meta = self._parse_notes(card.get("notes", ""))
         search_term = self._build_search_term(meta)
-        recent_price = await self._get_recent_sold_price(api_key, search_term, meta.get("min_grade"))
+        recent_price = await self._fetch_price(token, search_term, meta.get("min_grade"))
 
         if recent_price is None:
             return None
@@ -90,7 +130,6 @@ class EbayMonitor(BaseMonitor):
         stored_price = meta.get("last_price")
         symbol = card.get("symbol", search_term)
 
-        # Write price to market_cache
         try:
             await db.set_market_cache(
                 symbol=symbol,
@@ -113,7 +152,6 @@ class EbayMonitor(BaseMonitor):
                         "current_price": recent_price,
                         "previous_price": stored_price,
                         "change_pct": round(change_pct * 100, 2),
-                        "card_id": card.get("id"),
                         "category": meta.get("category"),
                         "grade": meta.get("min_grade"),
                     },
@@ -131,13 +169,11 @@ class EbayMonitor(BaseMonitor):
             parts.insert(0, str(card["year"]))
         return " ".join(parts)
 
-    async def _get_recent_sold_price(
-        self, api_key: str, search_term: str, min_grade: str | None = None
-    ) -> float | None:
+    async def _fetch_price(self, token: str, search_term: str, min_grade: str | None = None) -> float | None:
         """Query eBay sold listings and return median price."""
         headers = {
-            "Authorization": f"Bearer {api_key}",
-            "X-EBAY-C-MARKETETPLACE-ID": "EBAY_US",
+            "Authorization": f"Bearer {token}",
+            "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
             "Content-Type": "application/json",
         }
 
@@ -152,7 +188,7 @@ class EbayMonitor(BaseMonitor):
             params["filter"] += f",grade:{min_grade}"
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(proxy=self._proxies, timeout=15) as client:
                 resp = await client.get(
                     f"{self.BASE_URL}/item_summary/search",
                     headers=headers,

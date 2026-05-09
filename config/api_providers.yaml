@@ -28,7 +28,8 @@ market_data:
     enabled: true
   ebay:
     enabled: true
-    api_key: ${EBAY_API_KEY}
+    client_id: ${EBAY_CLIENT_ID}
+    client_secret: ${EBAY_CLIENT_SECRET}
 
 notification:
   enabled: true
