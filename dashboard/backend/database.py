@@ -343,15 +343,17 @@ async def get_market_cache_latest(
 
 async def get_watchlist_prices(asset_class: str = "") -> list[dict]:
     """Get latest cached prices for all watchlist items."""
+    import json
     db = await get_db()
     try:
         if asset_class:
             cursor = await db.execute(
                 """
-                SELECT w.*, m.raw_data, m.fetched_at
+                SELECT w.id, w.asset_class, w.symbol, w.exchange, w.notes, w.created_at,
+                       m.raw_data, m.fetched_at
                 FROM watchlist w
                 LEFT JOIN market_cache m
-                    ON m.symbol = w.symbol AND m.exchange = w.exchange
+                    ON m.symbol = w.symbol
                     AND m.data_type = 'latest_price'
                 WHERE w.asset_class = ?
                 ORDER BY w.asset_class, w.symbol
@@ -361,16 +363,26 @@ async def get_watchlist_prices(asset_class: str = "") -> list[dict]:
         else:
             cursor = await db.execute(
                 """
-                SELECT w.*, m.raw_data, m.fetched_at
+                SELECT w.id, w.asset_class, w.symbol, w.exchange, w.notes, w.created_at,
+                       m.raw_data, m.fetched_at
                 FROM watchlist w
                 LEFT JOIN market_cache m
-                    ON m.symbol = w.symbol AND m.exchange = w.exchange
+                    ON m.symbol = w.symbol
                     AND m.data_type = 'latest_price'
                 ORDER BY w.asset_class, w.symbol
                 """,
             )
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("raw_data") and isinstance(d["raw_data"], str):
+                try:
+                    d["raw_data"] = json.loads(d["raw_data"])
+                except Exception:
+                    pass
+            result.append(d)
+        return result
     finally:
         await db.close()
 

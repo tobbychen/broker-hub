@@ -1,15 +1,75 @@
-"""AKShare-based monitor for A-shares and China futures."""
+"""A-share monitor using Sina Finance API.
+
+Sina Finance works on Windows where eastmoney push2 API fails due to
+SSL renegotiation issues with curl+Schannel. We use curl subprocess
+with --noproxy to bypass the WinHTTP system proxy.
+"""
 import asyncio
-import akshare as ak
-from datetime import datetime
+import json
+import subprocess
+from datetime import datetime, timedelta
 from ..config import get_market_data_config
 from .. import database as db
 from .base import BaseMonitor, Alert
 
 
+def _curl_get(url: str, timeout: int = 10) -> str | None:
+    """Fetch text via curl subprocess, bypassing WinHTTP proxy on Windows."""
+    cmd = [
+        "curl", "-s", "--noproxy", "*", "--max-time", str(timeout),
+        "-H", "Referer: https://finance.sina.com.cn",
+        "-H", "User-Agent: Mozilla/5.0",
+        url,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 2)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout
+    except Exception:
+        pass
+    return None
+
+
+def _parse_sina_quote(raw: str) -> dict | None:
+    """Parse a Sina Finance hq_str line into a dict.
+
+    raw example: '贵州茅台,1371.660,1371.050,1372.990,1382.770,1370.000,
+                 1372.600,1372.990,...,2026-05-08,15:00:01,00,'
+    Fields: name, open, prev_close, current, high, low, ...
+    """
+    parts = raw.strip().strip('"').split(",")
+    if len(parts) < 10:
+        return None
+    try:
+        return {
+            "name": parts[0],
+            "open": float(parts[1]),
+            "prev_close": float(parts[2]),
+            "current": float(parts[3]),
+            "high": float(parts[4]),
+            "low": float(parts[5]),
+            "date": parts[30] if len(parts) > 30 else "",
+            "time": parts[31] if len(parts) > 31 else "",
+        }
+    except (ValueError, IndexError):
+        return None
+
+
+def _build_sina_url(symbols: list[str]) -> str:
+    """Build a Sina batch quote URL for given symbols.
+
+    symbols: list of 'sh600519', 'sz399001' etc.
+    """
+    prefix = ",".join(symbols)
+    return f"https://hq.sinajs.cn/list={prefix}"
+
+
 class AKShareMonitor(BaseMonitor):
-    # Index codes to track
-    INDEX_SYMBOLS = ["000001", "399001", "399006"]
+    INDEX_SYMBOLS = [
+        ("000001", "sh"),
+        ("399001", "sz"),
+        ("399006", "sz"),
+    ]
 
     @property
     def name(self) -> str:
@@ -25,6 +85,22 @@ class AKShareMonitor(BaseMonitor):
             return False
         total_minutes = now.hour * 60 + now.minute
         return (9 * 60 + 30) <= total_minutes <= (15 * 60)
+
+    def _parse_quotes(self, text: str) -> dict[str, dict]:
+        """Parse Sina multi-line response into {symbol: quote_dict}."""
+        result = {}
+        for line in text.splitlines():
+            if "hq_str_" not in line or "=" not in line:
+                continue
+            try:
+                sym_part = line.split("hq_str_")[1].split("=")[0].strip()
+                raw = line.split('"', 1)[1].split('"', 1)[0]
+                quote = _parse_sina_quote(raw)
+                if quote:
+                    result[sym_part] = quote
+            except Exception:
+                continue
+        return result
 
     async def check(self) -> list[Alert]:
         if not self.config.get("enabled", True):
@@ -51,23 +127,29 @@ class AKShareMonitor(BaseMonitor):
     async def _check_indices(self) -> list[Alert]:
         alerts = []
         try:
-            df = ak.stock_zh_index_spot_em()
-            for _, row in df.iterrows():
-                code = str(row.get("代码", ""))
-                if code not in self.INDEX_SYMBOLS:
+            symbols = [f"{prefix}{code}" for code, prefix in self.INDEX_SYMBOLS]
+            url = _build_sina_url(symbols)
+            text = _curl_get(url, timeout=8)
+            if not text:
+                return alerts
+            quotes = self._parse_quotes(text)
+            for code, prefix in self.INDEX_SYMBOLS:
+                sym = f"{prefix}{code}"
+                if sym not in quotes:
                     continue
-                change_pct = float(row.get("涨跌幅", 0))
+                q = quotes[sym]
+                current = q["current"]
+                prev = q["prev_close"]
+                if prev <= 0:
+                    continue
+                change_pct = (current - prev) / prev * 100
                 if abs(change_pct) > self.threshold * 100:
                     alerts.append(Alert(
                         source="akshare",
                         alert_type="price_spike",
                         symbol=code,
                         exchange="SSE/SZSE",
-                        details={
-                            "name": row.get("名称", ""),
-                            "current": float(row.get("最新价", 0)),
-                            "change_pct": change_pct,
-                        },
+                        details={"name": q["name"], "current": current, "change_pct": round(change_pct, 2)},
                         timestamp=datetime.now(),
                         priority="high" if abs(change_pct) > 5 else "normal",
                     ))
@@ -76,128 +158,136 @@ class AKShareMonitor(BaseMonitor):
         return alerts
 
     async def _check_stocks(self) -> list[Alert]:
-        """Check individual stocks from SQLite watchlist.
-
-        Reads from watchlist table (asset_class='stock'), fetches daily bars,
-        alerts on % move vs yesterday close, writes prices to market_cache.
-        """
         alerts = []
-
         try:
             stocks = await db.get_watchlist_items("stock")
         except Exception:
             return alerts
-
         if not stocks:
             return alerts
 
-        today = datetime.now().strftime("%Y%m%d")
-        yesterday_ts = datetime.now().timestamp() - 86400
-        yesterday_str = datetime.fromtimestamp(yesterday_ts).strftime("%Y%m%d")
+        # Build Sina symbols (sh for SSE, sz for SZSE)
+        sina_symbols = []
+        for s in stocks:
+            code = s.get("symbol", "")
+            if code.startswith(("6",)):
+                sina_symbols.append(f"sh{code}")
+            elif code.startswith(("0", "3")):
+                sina_symbols.append(f"sz{code}")
+
+        if not sina_symbols:
+            return alerts
+
+        url = _build_sina_url(sina_symbols)
+        text = _curl_get(url, timeout=8)
+        if not text:
+            return alerts
+
+        quotes = self._parse_quotes(text)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
+        # Map back to stock entries
+        stock_map = {s.get("symbol"): s for s in stocks}
 
         for stock in stocks:
-            code = stock.get("symbol")
-            name = stock.get("notes", code)  # notes stores the company name
-            if not code:
+            code = stock.get("symbol", "")
+            prefix = "sh" if code.startswith("6") else "sz"
+            sym = f"{prefix}{code}"
+
+            if sym not in quotes:
                 continue
+
+            q = quotes[sym]
+            current = q["current"]
+            prev = q["prev_close"]
 
             try:
-                df = ak.stock_zh_a_hist(
+                await db.set_market_cache(
                     symbol=code,
-                    period="daily",
-                    adjust="qfq",
-                    start_date=yesterday_str,
-                    end_date=today,
+                    data_type="latest_price",
+                    raw_data={
+                        "price": current,
+                        "prev_close": prev,
+                        "open": q["open"],
+                        "high": q["high"],
+                        "low": q["low"],
+                        "date": q["date"],
+                        "time": q["time"],
+                    },
+                    exchange="SSE/SZSE",
                 )
-                if df is None or df.empty:
-                    continue
-
-                today_bar = df.iloc[-1]
-                prev_bar = df.iloc[-2] if len(df) >= 2 else None
-
-                current_price = float(today_bar["收盘"])
-                prev_close = float(prev_bar["收盘"]) if prev_bar is not None else None
-
-                # Write price to market_cache
-                try:
-                    await db.set_market_cache(
-                        symbol=code,
-                        data_type="latest_price",
-                        raw_data={"price": current_price, "prev_close": prev_close},
-                        exchange="SSE/SZSE",
-                    )
-                except Exception:
-                    pass
-
-                # Alert on % move vs yesterday close
-                if prev_close and prev_close > 0:
-                    change_pct = (current_price - prev_close) / prev_close * 100
-                    if abs(change_pct) > self.threshold * 100:
-                        alerts.append(Alert(
-                            source="akshare",
-                            alert_type="price_spike",
-                            symbol=code,
-                            exchange="SSE/SZSE",
-                            details={
-                                "name": name,
-                                "current": current_price,
-                                "prev_close": prev_close,
-                                "change_pct": round(change_pct, 2),
-                            },
-                            timestamp=datetime.now(),
-                            priority="high" if abs(change_pct) > 5 else "normal",
-                        ))
-
             except Exception:
-                continue
+                pass
 
+            if prev > 0:
+                change_pct = (current - prev) / prev * 100
+                if abs(change_pct) > self.threshold * 100:
+                    alerts.append(Alert(
+                        source="akshare",
+                        alert_type="price_spike",
+                        symbol=code,
+                        exchange="SSE/SZSE",
+                        details={
+                            "name": stock.get("notes", code),
+                            "current": current,
+                            "prev_close": prev,
+                            "change_pct": round(change_pct, 2),
+                        },
+                        timestamp=datetime.now(),
+                        priority="high" if abs(change_pct) > 5 else "normal",
+                    ))
         return alerts
 
     async def get_watchlist(self) -> list[dict]:
-        """Return current prices for all stocks in SQLite watchlist."""
         items = []
         try:
             stocks = await db.get_watchlist_items("stock")
         except Exception:
             return items
-
         if not stocks:
             return items
 
-        today = datetime.now().strftime("%Y%m%d")
-        yesterday_ts = datetime.now().timestamp() - 86400
-        yesterday_str = datetime.fromtimestamp(yesterday_ts).strftime("%Y%m%d")
+        sina_symbols = []
+        for s in stocks:
+            code = s.get("symbol", "")
+            if code.startswith(("6",)):
+                sina_symbols.append(f"sh{code}")
+            elif code.startswith(("0", "3")):
+                sina_symbols.append(f"sz{code}")
+
+        if not sina_symbols:
+            return items
+
+        url = _build_sina_url(sina_symbols)
+        text = _curl_get(url, timeout=8)
+        if not text:
+            return items
+
+        quotes = self._parse_quotes(text)
 
         for stock in stocks:
-            code = stock.get("symbol")
+            code = stock.get("symbol", "")
             name = stock.get("notes", code)
-            if not code:
+            prefix = "sh" if code.startswith("6") else "sz"
+            sym = f"{prefix}{code}"
+
+            if sym not in quotes:
                 continue
-            try:
-                df = ak.stock_zh_a_hist(
-                    symbol=code,
-                    period="daily",
-                    adjust="qfq",
-                    start_date=yesterday_str,
-                    end_date=today,
-                )
-                if df is None or df.empty:
-                    continue
-                today_bar = df.iloc[-1]
-                prev_bar = df.iloc[-2] if len(df) >= 2 else None
-                current_price = float(today_bar["收盘"])
-                prev_close = float(prev_bar["收盘"]) if prev_bar is not None else None
-                change_pct = 0.0
-                if prev_close and prev_close > 0:
-                    change_pct = (current_price - prev_close) / prev_close * 100
-                items.append({
-                    "symbol": code,
-                    "name": name,
-                    "price": current_price,
-                    "prev_close": prev_close,
-                    "change_pct": round(change_pct, 2),
-                    "exchange": "SSE/SZSE",
-                })
-            except Exception:
-                continue
+
+            q = quotes[sym]
+            current = q["current"]
+            prev = q["prev_close"]
+            change_pct = (current - prev) / prev * 100 if prev > 0 else 0.0
+
+            items.append({
+                "symbol": code,
+                "name": name,
+                "price": current,
+                "prev_close": prev,
+                "open": q["open"],
+                "high": q["high"],
+                "low": q["low"],
+                "change_pct": round(change_pct, 2),
+                "exchange": "SSE/SZSE",
+            })
         return items

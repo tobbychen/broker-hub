@@ -4,10 +4,10 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 
 const navItems = [
+  { path: '/watchlist', label: '监控', icon: 'Watch' },
   { path: '/decisions', label: '决策', icon: 'Operation' },
   { path: '/daily-report', label: '日报', icon: 'Document' },
   { path: '/portfolio', label: '持仓', icon: 'Wallet' },
-  { path: '/sports-cards', label: '球星卡', icon: 'Goods' },
   { path: '/agent-status', label: '状态', icon: 'Monitor' },
 ]
 </script>

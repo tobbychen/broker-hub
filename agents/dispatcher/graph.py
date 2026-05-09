@@ -20,15 +20,22 @@ def _get_llm():
     )
 
 
+def _make_node(fn, llm):
+    """Wrap an async node function with the LLM injected."""
+    async def node(state):
+        return await fn(state, llm)
+    return node
+
+
 def create_dispatcher_graph():
     """Build the dispatcher state graph."""
     graph = StateGraph(dict)
 
     llm = _get_llm()
 
-    graph.add_node("monitor_handler", lambda s: monitor_handler(s, llm))
-    graph.add_node("research_router", lambda s: research_router(s, llm))
-    graph.add_node("approval_router", lambda s: approval_router(s, llm))
+    graph.add_node("monitor_handler", _make_node(monitor_handler, llm))
+    graph.add_node("research_router", _make_node(research_router, llm))
+    graph.add_node("approval_router", _make_node(approval_router, llm))
 
     graph.set_entry_point("monitor_handler")
     graph.add_edge("monitor_handler", "research_router")

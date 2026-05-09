@@ -8,6 +8,11 @@ const router = createRouter({
       redirect: '/decisions',
     },
     {
+      path: '/watchlist',
+      name: 'watchlist',
+      component: () => import('./views/WatchlistView.vue'),
+    },
+    {
       path: '/portfolio',
       name: 'portfolio',
       component: () => import('./views/PortfolioView.vue'),

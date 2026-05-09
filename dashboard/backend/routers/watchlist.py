@@ -24,8 +24,8 @@ class WatchlistPriceItem(BaseModel):
     symbol: str
     exchange: str
     notes: str
-    raw_data: str | None
-    fetched_at: str | None
+    raw_data: dict | str | None = None
+    fetched_at: str | None = None
 
 
 @router.get("/", response_model=list[WatchlistItem])

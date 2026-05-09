@@ -1,6 +1,7 @@
 """Telegram notification bot — sends alert cards to a chat."""
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -9,6 +10,14 @@ import httpx
 from agents.config import get_notification_config
 
 logger = logging.getLogger(__name__)
+
+
+def _detect_proxy() -> str | None:
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        val = os.environ.get(var)
+        if val:
+            return val
+    return None
 
 
 class TelegramNotifier:
@@ -21,6 +30,7 @@ class TelegramNotifier:
         self.token = cfg.get("bot_token", "")
         self.chat_id = cfg.get("channel_id", "")
         self.enabled = cfg.get("enabled", False)
+        self._proxy = _detect_proxy()
 
     def _endpoint(self, method: str) -> str:
         return self.API_URL.format(token=self.token, method=method)
@@ -30,7 +40,7 @@ class TelegramNotifier:
         if not self.enabled or not self.token or not self.chat_id:
             return False
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(proxy=self._proxy, timeout=15) as client:
                 resp = await client.post(self._endpoint("sendMessage"), json=payload)
                 if resp.status_code == 200:
                     return True
@@ -49,10 +59,10 @@ class TelegramNotifier:
         reasoning: str,
         risk_level: str,
         dashboard_url: str = "",
-    ):
+    ) -> bool:
         """Send a rich decision alert card to Telegram using HTML."""
         if not self.enabled:
-            return
+            return False
 
         risk_emoji = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(risk_level, "⚪")
         risk_text = {"low": "低风险", "medium": "中风险", "high": "高风险"}.get(risk_level, risk_level)
@@ -70,23 +80,34 @@ class TelegramNotifier:
             f"🔗 <a href='{dashboard_url}'>打开仪表盘审批</a>"
         )
 
-        await self._send({
+        # Inline keyboard requires a public HTTPS URL — skip if dashboard_url is localhost
+        reply_markup = None
+        if dashboard_url and not dashboard_url.startswith("http://localhost"):
+            reply_markup = {
+                "inline_keyboard": [
+                    [
+                        {"text": "✅ 批准", "callback_data": f"approve_{decision_id}"},
+                        {"text": "❌ 拒绝", "callback_data": f"reject_{decision_id}"},
+                    ],
+                    [
+                        {"text": "🔍 打开仪表盘", "url": dashboard_url},
+                    ],
+                ]
+            }
+
+        payload = {
             "chat_id": self.chat_id,
             "text": text,
             "parse_mode": "HTML",
-            "reply_markup": {
-                "inline_keyboard": [[
-                    {"text": "✅ 批准", "callback_data": f"approve_{decision_id}"},
-                    {"text": "❌ 拒绝", "callback_data": f"reject_{decision_id}"},
-                    {"text": "🔍 追问", "url": dashboard_url},
-                ]]
-            },
-        })
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        return await self._send(payload)
 
-    async def send_daily_report(self, summary: str = "", dashboard_url: str = ""):
+    async def send_daily_report(self, summary: str = "", dashboard_url: str = "") -> bool:
         """Send daily report to Telegram."""
         if not self.enabled:
-            return
+            return False
 
         text = (
             f"📋 <b>每日早间简报</b>\n"
@@ -96,23 +117,23 @@ class TelegramNotifier:
             f"🔗 <a href='{dashboard_url}'>查看完整日报</a>"
         )
 
-        await self._send({
+        return await self._send({
             "chat_id": self.chat_id,
             "text": text,
             "parse_mode": "HTML",
         })
 
-    async def send_text(self, message: str):
+    async def send_text(self, message: str) -> bool:
         """Send a plain text message."""
-        await self._send({
+        return await self._send({
             "chat_id": self.chat_id,
             "text": message,
         })
 
-    async def send_watchlist(self, items: list[dict]):
+    async def send_watchlist(self, items: list[dict]) -> bool:
         """Send a watchlist card showing current prices of all monitored assets."""
         if not self.enabled or not items:
-            return
+            return False
 
         # Build per-exchange sections
         sections = {}
@@ -143,7 +164,7 @@ class TelegramNotifier:
                     lines.append(f"{arrow} {symbol} —")
             lines.append("")
 
-        await self._send({
+        return await self._send({
             "chat_id": self.chat_id,
             "text": "\n".join(lines).strip(),
             "parse_mode": "HTML",
