@@ -10,7 +10,7 @@ router = APIRouter()
 async def agent_status_all():
     db = await get_db()
     try:
-        rows = await db.fetchall(
+        cursor = await db.execute(
             """
             SELECT agent_name, event_type, details,
                    MAX(created_at) as last_check,
@@ -20,11 +20,12 @@ async def agent_status_all():
             GROUP BY agent_name
             """
         )
+        rows = await cursor.fetchall()
         result = []
         for r in rows:
-            status = "running"
             error = None
-            if error := (r["details"] or "").lower().startswith("error"):
+            status = "running"
+            if (r["details"] or "").lower().startswith("error"):
                 status = "error"
                 error = r["details"]
             result.append(AgentStatusSchema(

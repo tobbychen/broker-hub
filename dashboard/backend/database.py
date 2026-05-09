@@ -37,9 +37,10 @@ async def init_db():
 async def get_all_positions() -> list[dict]:
     db = await get_db()
     try:
-        rows = await db.fetchall(
+        cursor = await db.execute(
             "SELECT * FROM positions ORDER BY asset_class, symbol"
         )
+        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
         await db.close()
@@ -70,10 +71,11 @@ async def upsert_position(
             (asset_class, symbol, exchange, quantity, avg_cost, currency, notes),
         )
         await db.commit()
-        row = await db.fetchone(
+        cursor = await db.execute(
             "SELECT id FROM positions WHERE asset_class=? AND symbol=? AND exchange=?",
             (asset_class, symbol, exchange),
         )
+        row = await cursor.fetchone()
         return row["id"] if row else 0
     finally:
         await db.close()
@@ -112,9 +114,10 @@ async def create_decision(
 async def get_pending_decisions() -> list[dict]:
     db = await get_db()
     try:
-        rows = await db.fetchall(
+        cursor = await db.execute(
             "SELECT * FROM decisions WHERE status='pending' ORDER BY created_at DESC"
         )
+        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
         await db.close()
@@ -149,10 +152,11 @@ async def add_chat_message(decision_id: int, role: str, content: str) -> int:
 async def get_chat_history(decision_id: int) -> list[dict]:
     db = await get_db()
     try:
-        rows = await db.fetchall(
+        cursor = await db.execute(
             "SELECT * FROM decision_chat WHERE decision_id=? ORDER BY created_at",
             (decision_id,),
         )
+        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
         await db.close()
@@ -183,10 +187,11 @@ async def save_daily_report(
             (report_date.isoformat(), overnight_summary, critical_events, investment_windows, risk_metrics),
         )
         await db.commit()
-        row = await db.fetchone(
+        cursor = await db.execute(
             "SELECT id FROM daily_reports WHERE report_date=?",
             (report_date.isoformat(),),
         )
+        row = await cursor.fetchone()
         return row["id"] if row else 0
     finally:
         await db.close()
@@ -195,9 +200,10 @@ async def save_daily_report(
 async def get_daily_report(report_date: date) -> Optional[dict]:
     db = await get_db()
     try:
-        row = await db.fetchone(
+        cursor = await db.execute(
             "SELECT * FROM daily_reports WHERE report_date=?", (report_date.isoformat(),)
         )
+        row = await cursor.fetchone()
         return dict(row) if row else None
     finally:
         await db.close()
@@ -208,7 +214,8 @@ async def get_daily_report(report_date: date) -> Optional[dict]:
 async def get_sports_cards() -> list[dict]:
     db = await get_db()
     try:
-        rows = await db.fetchall("SELECT * FROM sports_cards ORDER BY set_name, card_name")
+        cursor = await db.execute("SELECT * FROM sports_cards ORDER BY set_name, card_name")
+        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
         await db.close()
@@ -248,10 +255,11 @@ async def upsert_watchlist_item(
             (asset_class, symbol, exchange, notes),
         )
         await db.commit()
-        row = await db.fetchone(
+        cursor = await db.execute(
             "SELECT id FROM watchlist WHERE asset_class=? AND symbol=? AND exchange=?",
             (asset_class, symbol, exchange),
         )
+        row = await cursor.fetchone()
         return row["id"] if row else 0
     finally:
         await db.close()
@@ -261,12 +269,13 @@ async def get_watchlist_items(asset_class: str = "") -> list[dict]:
     db = await get_db()
     try:
         if asset_class:
-            rows = await db.fetchall(
+            cursor = await db.execute(
                 "SELECT * FROM watchlist WHERE asset_class=? ORDER BY symbol",
                 (asset_class,),
             )
         else:
-            rows = await db.fetchall("SELECT * FROM watchlist ORDER BY asset_class, symbol")
+            cursor = await db.execute("SELECT * FROM watchlist ORDER BY asset_class, symbol")
+        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
         await db.close()
@@ -318,7 +327,7 @@ async def get_market_cache_latest(
     """Get cached market data if fresh enough, else None."""
     db = await get_db()
     try:
-        row = await db.fetchone(
+        cursor = await db.execute(
             """
             SELECT * FROM market_cache
             WHERE symbol=? AND exchange=? AND data_type=?
@@ -326,6 +335,7 @@ async def get_market_cache_latest(
             """,
             (symbol, exchange, data_type, max_age_seconds),
         )
+        row = await cursor.fetchone()
         return dict(row) if row else None
     finally:
         await db.close()
@@ -336,7 +346,7 @@ async def get_watchlist_prices(asset_class: str = "") -> list[dict]:
     db = await get_db()
     try:
         if asset_class:
-            rows = await db.fetchall(
+            cursor = await db.execute(
                 """
                 SELECT w.*, m.raw_data, m.fetched_at
                 FROM watchlist w
@@ -349,7 +359,7 @@ async def get_watchlist_prices(asset_class: str = "") -> list[dict]:
                 (asset_class,),
             )
         else:
-            rows = await db.fetchall(
+            cursor = await db.execute(
                 """
                 SELECT w.*, m.raw_data, m.fetched_at
                 FROM watchlist w
@@ -359,6 +369,7 @@ async def get_watchlist_prices(asset_class: str = "") -> list[dict]:
                 ORDER BY w.asset_class, w.symbol
                 """,
             )
+        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
     finally:
         await db.close()
@@ -369,7 +380,7 @@ async def get_watchlist_prices(asset_class: str = "") -> list[dict]:
 async def get_portfolio_summary() -> dict:
     db = await get_db()
     try:
-        rows = await db.fetchall(
+        cursor = await db.execute(
             """
             SELECT
                 asset_class,
@@ -379,6 +390,7 @@ async def get_portfolio_summary() -> dict:
             GROUP BY asset_class
             """
         )
+        rows = await cursor.fetchall()
         total = sum(r["total_cost"] or 0 for r in rows)
         allocation = {}
         for r in rows:
