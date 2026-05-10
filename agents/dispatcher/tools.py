@@ -1,48 +1,26 @@
 """Tools (skills) available to the Dispatcher agent."""
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import json
 import re
-from datetime import datetime
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from dashboard.backend.database import (
     get_all_positions,
     create_decision,
     get_pending_decisions,
 )
-from ..config import get_llm_config
-
-
-# ---- LLM helpers ----
-
-def _get_research_llm():
-    cfg = get_llm_config()
-    primary = cfg.get("primary", {})
-    return ChatOpenAI(
-        api_key=primary.get("api_key", ""),
-        model=primary.get("model", "auto"),
-        base_url=primary.get("base_url", "https://api.minimax.chat/v1"),
-        temperature=0.3,
-    )
+from ..llm import get_single_llm
 
 
 RESEARCH_SYSTEM = """你是一个专业的投资研究分析师。给定一个资产警报，你需要：
 1. 深度分析是否构成真实的投资机会
-2. 收集并整合多个数据来源的信息
-3. 给出置信度评估和风险评级
-4. 用清晰的中文解释分析逻辑
+2. 给出置信度评估和风险评级
+3. 用清晰的中文解释分析逻辑
 
-分析维度：
-- 基本面：相关新闻、宏观数据、行业趋势
-- 技术面：价格走势、成交量、关键支撑/压力位
-- 风险因素：市场情绪、政策风险、流动性风险
-
-重要：必须输出结构化的JSON，不要输出其他内容：
+重要：必须输出结构化的JSON：
 {"置信度": 0.75, "风险等级": "medium", "建议行动": "buy", "分析理由": "...", "建议数量": null}"""
 
 
@@ -68,112 +46,48 @@ async def lookup_portfolio() -> str:
 
 @tool
 async def get_live_price(symbol: str, asset_class: str = "") -> str:
-    """Fetch the current market price for a symbol from the market cache.
+    """Fetch the current market price for a symbol from the market cache."""
+    from dashboard.backend.database import get_market_cache
 
-    Args:
-        symbol: The asset symbol (e.g. '600519', 'BTC', 'charizard_pika001')
-        asset_class: Optional hint: 'stock', 'crypto', 'sports_card', etc.
-    """
-    import sqlite3, json
-    from pathlib import Path
+    cache = await get_market_cache(symbol, "", "latest_price")
+    if not cache:
+        return f"未找到 {symbol} 的价格数据"
 
-    DB_PATH = Path(__file__).parent.parent.parent / "data" / "broker_agents.db"
-    conn = sqlite3.connect(str(DB_PATH))
-    try:
-        cursor = conn.execute(
-            "SELECT raw_data, fetched_at FROM market_cache "
-            "WHERE symbol=? AND data_type='latest_price' "
-            "ORDER BY fetched_at DESC LIMIT 1",
-            (symbol,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return f"未找到 {symbol} 的价格数据"
+    raw_data = cache.get("raw_data", "{}")
+    if isinstance(raw_data, str):
+        try:
+            raw_data = json.loads(raw_data)
+        except Exception:
+            pass
 
-        raw_data = json.loads(row[0])
+    if isinstance(raw_data, dict):
         price = raw_data.get("price")
         prev_close = raw_data.get("prev_close")
-        fetched = row[1]
-
+        fetched = cache.get("fetched_at")
         if price is None:
             return f"{symbol} 价格数据不完整"
-
         change_pct = ""
         if prev_close and prev_close > 0:
             chg = (price - prev_close) / prev_close * 100
             change_pct = f" ({chg:+.2f}%)"
-
         prev_close_str = f"{prev_close:.2f}" if prev_close else "N/A"
         return (
             f"{symbol}: {price:.2f}{change_pct} "
             f"(昨收: {prev_close_str}) "
             f"数据时间: {fetched}"
         )
-    finally:
-        conn.close()
-
-
-# ---- Research analyst skill ----
-
-@tool
-async def research_asset(
-    symbol: str,
-    source: str,
-    asset_class: str,
-    details: str,
-) -> str:
-    """Run deep research analysis on an asset alert using the LLM.
-
-    This skill fetches current market context and invokes the Research Analyst LLM
-    to produce a structured investment recommendation.
-
-    Args:
-        symbol: Asset ticker symbol
-        source: Alert source monitor ('akshare', 'okx', 'ebay')
-        asset_class: 'stock', 'crypto', 'sports_card', etc.
-        details: Human-readable alert details (price, change%, etc.)
-    """
-    portfolio_str = await lookup_portfolio.ainvoke({})
-    live_price_str = await get_live_price.ainvoke({"symbol": symbol, "asset_class": asset_class})
-
-    prompt = f"""请分析以下投资警报：
-
-资产: {symbol}
-alert source: {source}
-资产类别: {asset_class}
-警报详情: {details}
-
-当前市场数据:
-{live_price_str}
-
-当前投资组合:
-{portfolio_str}
-
-请给出完整分析，严格按照以下JSON格式输出，不要输出其他内容：
-{{"置信度": 0.75, "风险等级": "medium", "建议行动": "buy", "分析理由": "...", "建议数量": null}}"""
-
-    llm = _get_research_llm()
-    response = await llm.ainvoke([SystemMessage(content=RESEARCH_SYSTEM), HumanMessage(content=prompt)])
-    return response.content.strip()
+    return f"{symbol} 价格数据格式错误"
 
 
 # ---- Decision submission skill ----
 
 @tool
 async def parse_research_and_submit(research_result: str, symbol: str, asset_class: str, source: str) -> str:
-    """Parse the research analyst's structured text output and submit a decision to the database.
-
-    Args:
-        research_result: The raw text output from research_asset skill
-        symbol: Asset symbol
-        asset_class: 'stock', 'crypto', 'sports_card', etc.
-        source: Monitor source ('akshare', 'okx', 'ebay')
-    """
-    # Extract JSON from the research result
+    """Parse the research analyst's output and submit a decision to the database."""
     content = research_result.strip()
-
-    # Try JSON extraction from various formats
     parsed = None
+
+    # Try JSON block extraction
     if "```json" in content:
         json_str = content.split("```json")[1].split("```")[0]
         try:
@@ -182,7 +96,7 @@ async def parse_research_and_submit(research_result: str, symbol: str, asset_cla
             pass
 
     if parsed is None:
-        # Try to find a JSON-like block with regex
+        # Try regex brace matching
         brace_match = re.search(
             r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
             content,
@@ -195,13 +109,12 @@ async def parse_research_and_submit(research_result: str, symbol: str, asset_cla
                 pass
 
     if parsed is None:
-        # Fall back to keyword extraction
+        # Keyword fallback
         confidence = 0.5
         risk_level = "medium"
         action = "hold"
         reason = content[:500]
 
-        # Keyword heuristics
         confidence_map = {"高": 0.85, "中": 0.65, "低": 0.45, "很高": 0.95, "很低": 0.35}
         for kw, val in confidence_map.items():
             if kw in content:
@@ -212,8 +125,6 @@ async def parse_research_and_submit(research_result: str, symbol: str, asset_cla
             action = "buy"
         elif any(k in content for k in ["sell", "卖出", "做空", "减持"]):
             action = "sell"
-        else:
-            action = "hold"
 
         if any(k in content for k in ["风险等级", "风险:"]):
             for rl in ["高", "中", "低"]:
@@ -229,7 +140,6 @@ async def parse_research_and_submit(research_result: str, symbol: str, asset_cla
             "建议数量": None,
         }
 
-    # Submit to database
     decision_id = await create_decision(
         decision_type=parsed.get("建议行动", "hold"),
         asset_class=asset_class,

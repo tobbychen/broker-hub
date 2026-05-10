@@ -121,3 +121,32 @@ CREATE INDEX IF NOT EXISTS idx_decisions_timeout ON decisions(timeout_at);
 CREATE INDEX IF NOT EXISTS idx_trades_decision ON trades(decision_id);
 CREATE INDEX IF NOT EXISTS idx_market_cache_symbol ON market_cache(symbol, exchange);
 CREATE INDEX IF NOT EXISTS idx_agent_logs_agent ON agent_logs(agent_name, created_at);
+
+-- Portfolio P&L snapshots
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    total_value REAL,
+    positions_json TEXT,
+    allocation_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dispatcher pipeline event audit trail
+CREATE TABLE IF NOT EXISTS dispatcher_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    alert_source TEXT,
+    decision_id INTEGER REFERENCES decisions(id),
+    details TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Telegram message log (inbound + outbound)
+CREATE TABLE IF NOT EXISTS telegram_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    direction TEXT CHECK(direction IN ('inbound', 'outbound')),
+    chat_id TEXT,
+    message_id TEXT,
+    text TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

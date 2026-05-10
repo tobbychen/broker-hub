@@ -62,14 +62,26 @@ async def send_watchlist_card():
 
 
 async def scheduler_loop():
-    """Main scheduler loop."""
+    """Main scheduler loop — runs monitors and triggers dispatcher for each cycle."""
+    from ..dispatcher.graph import get_dispatcher
+
     settings = get_agent_settings()
     interval = settings.get("monitor", {}).get("check_interval_seconds", 60)
 
     logger.info(f"Monitor scheduler started — interval: {interval}s")
     while True:
         try:
-            await run_monitor_cycle()
+            all_alerts = await run_monitor_cycle()
+
+            # Trigger dispatcher with alerts — fixes the scheduler → dispatcher gap
+            if all_alerts:
+                logger.info(f"[scheduler] Dispatching {len(all_alerts)} alert(s) to dispatcher")
+                try:
+                    dispatcher = get_dispatcher()
+                    await dispatcher.ainvoke({"alerts": all_alerts})
+                    logger.info("[scheduler] Dispatcher cycle complete")
+                except Exception as e:
+                    logger.error(f"[scheduler] Dispatcher error: {e}")
         except Exception as e:
             logger.error(f"Scheduler cycle error: {e}")
         await asyncio.sleep(interval)

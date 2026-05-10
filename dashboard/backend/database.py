@@ -416,3 +416,79 @@ async def get_portfolio_summary() -> dict:
         }
     finally:
         await db.close()
+
+
+async def get_market_cache(
+    symbol: str,
+    exchange: str = "",
+    data_type: str = "latest_price",
+) -> Optional[dict]:
+    """Get the most recent cached market data for a symbol (no age check)."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """
+            SELECT * FROM market_cache
+            WHERE symbol=? AND exchange=? AND data_type=?
+            ORDER BY fetched_at DESC LIMIT 1
+            """,
+            (symbol, exchange, data_type),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def set_portfolio_snapshot(
+    total_value: float,
+    positions_json: str,
+    allocation_json: str,
+) -> int:
+    """Store a portfolio snapshot for P&L tracking."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """
+            INSERT INTO portfolio_snapshots (total_value, positions_json, allocation_json)
+            VALUES (?, ?, ?)
+            """,
+            (total_value, positions_json, allocation_json),
+        )
+        await db.commit()
+        return cursor.lastrowid
+    finally:
+        await db.close()
+
+
+async def log_dispatcher_event(
+    event_type: str,
+    alert_source: str = "",
+    decision_id: int = 0,
+    details: str = "",
+) -> int:
+    """Log a dispatcher pipeline event for audit trail."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """
+            INSERT INTO dispatcher_events (event_type, alert_source, decision_id, details)
+            VALUES (?, ?, ?, ?)
+            """,
+            (event_type, alert_source, decision_id, details),
+        )
+        await db.commit()
+        return cursor.lastrowid
+    finally:
+        await db.close()
+
+
+async def get_decision_by_id(decision_id: int) -> Optional[dict]:
+    """Get a single decision by ID."""
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM decisions WHERE id=?", (decision_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()

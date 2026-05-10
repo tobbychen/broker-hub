@@ -1,4 +1,5 @@
 """FastAPI application entry point."""
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +10,49 @@ from .routers import portfolio, decisions, chat, daily_report, agent_status, wat
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+
+    # Start Telegram polling as a background task
+    polling_task = None
+    from .config import get_notification_config
+    cfg = get_notification_config()
+    if cfg.get("enabled") and cfg.get("bot_token"):
+        try:
+            from telegram.receiver import run_polling_loop
+            from telegram.chat_handler import handle_telegram_message
+            from telegram.bot import get_notifier
+
+            notifier = get_notifier()
+            if notifier.enabled and notifier.token:
+                polling_task = asyncio.create_task(
+                    run_polling_loop(
+                        notifier.token,
+                        on_message=handle_telegram_message,
+                        interval=1.0,
+                    )
+                )
+                asyncio.get_event_loop().call_later(
+                    5, lambda: asyncio.create_task(_log_telegram_started())
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to start Telegram polling: {e}")
+
+    async def _log_telegram_started():
+        import logging
+        logging.getLogger(__name__).info("Telegram polling loop started")
+
+    if polling_task:
+        app.state.telegram_polling_task = polling_task
+
     yield
+
+    # Shutdown
+    if polling_task:
+        polling_task.cancel()
+        try:
+            await polling_task
+        except Exception:
+            pass
 
 
 app = FastAPI(
