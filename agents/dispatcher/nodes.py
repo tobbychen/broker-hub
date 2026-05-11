@@ -6,13 +6,7 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import tool
 from .prompts import DISPATCHER_SYSTEM, format_alert_for_dispatcher
-from .tools import (
-    lookup_portfolio,
-    submit_decision,
-    lookup_pending_decisions,
-    get_live_price,
-    parse_research_and_submit,
-)
+from .skills.loader import get_skill_loader
 from ..research_analyst.agent import research_opportunity
 from ..trade_executor.agent import draft_order
 from ..risk_manager.rules import check_risk
@@ -23,14 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def _bind_tools(llm):
-    """Bind all dispatcher skills to the LLM."""
-    return llm.bind_tools([
-        lookup_portfolio,
-        lookup_pending_decisions,
-        get_live_price,
-        parse_research_and_submit,
-        submit_decision,
-    ])
+    """Bind all skills (hot-loaded from markdown) to the LLM."""
+    loader = get_skill_loader()
+    tools = loader.get_tools()
+    return llm.bind_tools(tools)
 
 
 def _source_to_asset_class(source: str) -> str:
@@ -71,7 +61,7 @@ async def monitor_handler(state: dict, llm) -> dict:
 
     bound_llm = _bind_tools(llm)
     alert_summaries = [format_alert_for_dispatcher(a) for a in alerts]
-    portfolio_str = await lookup_portfolio.ainvoke({})
+    portfolio_str = await get_skill_loader().get_skill("lookup_portfolio").fn()
 
     prompt = f"""以下市场警报已触发：
 
@@ -117,7 +107,8 @@ async def research_router(state: dict, llm) -> dict:
     if not decisions:
         return state
 
-    portfolio_str = state.get("portfolio_summary", "") or await lookup_portfolio.ainvoke({})
+    loader = get_skill_loader()
+    portfolio_str = state.get("portfolio_summary", "") or await loader.get_skill("lookup_portfolio").fn()
 
     for d in decisions:
         if d.get("research_done") or d.get("submitted"):
@@ -133,11 +124,11 @@ async def research_router(state: dict, llm) -> dict:
         asset_class = _source_to_asset_class(source)
         details_str = str(alert.get("details", {}))
 
-        # Get live price
-        price_result = await get_live_price.ainvoke({
-            "symbol": symbol,
-            "asset_class": asset_class,
-        })
+        # Get live price from hot-loaded skill
+        price_result = await loader.get_skill("get_live_price").fn(
+            symbol=symbol,
+            asset_class=asset_class,
+        )
         d["live_price"] = price_result
 
         # Run deep research using the Research Analyst agent
@@ -146,12 +137,12 @@ async def research_router(state: dict, llm) -> dict:
         d["research_done"] = True
 
         # Parse structured output from research and submit to DB
-        submit_result = await parse_research_and_submit.ainvoke({
-            "research_result": research_result,
-            "symbol": symbol,
-            "asset_class": asset_class,
-            "source": source,
-        })
+        submit_result = await loader.get_skill("parse_research_and_submit").fn(
+            research_result=research_result,
+            symbol=symbol,
+            asset_class=asset_class,
+            source=source,
+        )
         d["submitted"] = True
         d["submit_result"] = submit_result
 

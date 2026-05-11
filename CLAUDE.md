@@ -70,7 +70,67 @@ All LLM calls use `langchain_openai.ChatOpenAI` with MiniMax's OpenAI-compatible
 - `research_router` — marks alerts for research analysis
 - `approval_router` — drafts decision cards and submits to SQLite
 
-The graph is a singleton (`get_dispatcher()`). Tools (`agents/dispatcher/tools.py`) are bound to the LLM with `bind_tools()`.
+The graph is a singleton (`get_dispatcher()`). Tools are hot-loaded from markdown files in `agents/dispatcher/skills/`.
+
+### Skill Hot-Loading
+
+Skills (tools) are defined as markdown files with YAML frontmatter. The `SkillLoader` in `agents/dispatcher/skills/loader.py` hot-loads and monitors these files for changes.
+
+```
+agents/dispatcher/skills/
+├── SKILL_FORMAT.md              # Format documentation
+├── lookup_portfolio.md          # Portfolio query skill
+├── get_live_price.md            # Market price skill
+├── submit_decision.md           # Decision submission skill
+└── parse_research_and_submit.md # Research parser skill
+```
+
+Edit a skill file and it will be reloaded on next use (mtime-based detection).
+
+### Permission Reviewer
+
+`agents/permission_reviewer/` reviews Claude Code permission requests against project policies defined in `config/permission_policies.yaml`.
+
+- **ALLOW**: Standard development operations (Python, pytest, npm run, git status)
+- **DENY**: Dangerous operations (rm -rf, force push, credentials files)
+- **REVIEW**: Operations requiring human confirmation (package install, agent spawn)
+
+### Spec Compliance Checker
+
+Before any action, check if it aligns with the active spec scope. Specs are in `docs/superpowers/specs/`.
+
+```python
+from agents.spec_compliance import check_compliance
+
+# Check if action is allowed
+result = check_compliance(action="write", target="agents/dispatcher/skills/loader.py")
+if not result.compliant:
+    # Action requires spec amendment
+    print(result.reason)
+    print(result.suggestion)
+```
+
+**Workflow:**
+1. Check specs in `docs/superpowers/specs/` for active feature
+2. Activate relevant spec with `checker.activate_spec("skill-hot-loading")`
+3. All actions must comply with spec scope
+4. If outside scope → amend spec first, then proceed
+
+**Spec Frontmatter Format:**
+```yaml
+---
+name: feature-name
+date: YYYY-MM-DD
+version: 1.0.0
+scope:
+  files:
+    read: ["path/**/*.py"]
+    write: ["path/**/*.py"]
+  commands:
+    allowed: ["python", "pytest"]
+    blocked: ["git push --force"]
+---
+```
 
 ### Two-Stage Monitoring
 

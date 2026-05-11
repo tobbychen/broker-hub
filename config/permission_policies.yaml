@@ -1,0 +1,146 @@
+# Permission Review Policies for broker-agents
+# Reviews Claude Code permission requests against project requirements
+
+# ---- Allow Rules ----
+# Permissions that are automatically allowed based on project requirements
+
+allow_rules:
+  # File operations in project directories
+  - permission: Read
+    patterns: ["**/*.py", "**/*.yaml", "**/*.yml", "**/*.vue", "**/*.ts", "**/*.tsx", "**/*.json", "**/*.sql", "**/*.md"]
+    reason: "Standard development read operations"
+
+  - permission: Read
+    patterns: ["**/dashboard/**", "**/agents/**", "**/config/**", "**/database/**", "**/tests/**"]
+    reason: "Project source code and configs"
+
+  # Write operations in safe directories
+  - permission: Write
+    patterns: ["**/agents/**/*.py", "**/dashboard/**/*.py", "**/config/*.yaml", "**/tests/**/*.py"]
+    reason: "Allowed project code directories"
+
+  - permission: Write
+    patterns: ["**/skills/*.md"]
+    reason: "Skill files for hot-loading system"
+
+  # Shell commands for development - prefix patterns
+  - permission: Bash
+    patterns: ["python", "python3"]
+    reason: "Python interpreter"
+
+  - permission: Bash
+    patterns: ["pytest"]
+    reason: "Test execution"
+
+  - permission: Bash
+    patterns: ["uvicorn"]
+    reason: "Backend server"
+
+  - permission: Bash
+    patterns: ["npm run", "npm test"]
+    reason: "Safe npm scripts"
+
+  - permission: Bash
+    patterns: ["node"]
+    reason: "Node.js runtime"
+
+  - permission: Bash
+    patterns: ["git status", "git diff", "git log", "git branch", "git show"]
+    reason: "Read-only git operations"
+
+  - permission: Bash
+    patterns: ["ls", "dir", "type", "echo", "mkdir", "rmdir", "cat", "head", "tail"]
+    reason: "Safe file system queries"
+
+  - permission: Bash
+    patterns: ["curl"]
+    reason: "Network requests (without credentials)"
+
+# ---- Deny Rules ----
+# Permissions that are automatically denied (no human review needed)
+
+deny_rules:
+  # Destructive file operations
+  - permission: Write
+    patterns: ["**/.env", "**/*.env*", "**/credentials*.json", "**/secrets*.yaml"]
+    reason: "Never write credentials or secrets"
+
+  - permission: Write
+    patterns: ["**/data/*.db*", "**/data/*.sqlite*"]
+    reason: "Never modify database files directly"
+
+  - permission: Bash
+    patterns: ["rm -rf", "rmdir* /s", "del* /f* /q", "format*", "rd* /s"]
+    reason: "Destructive delete commands"
+
+  - permission: Bash
+    patterns: ["shutdown", "net user", "net localgroup", "reg delete*"]
+    reason: "System administration commands"
+
+  - permission: Bash
+    patterns: ["curl* -H* 'Authorization*'", "curl* -H* 'X-API-Key*'"]
+    reason: "Claude should not send credentials via curl"
+
+  # Git force operations
+  - permission: Bash
+    patterns: ["git push --force", "git push -f", "git push :*", "git push --delete*"]
+    reason: "Force push and branch deletion"
+
+  - permission: Bash
+    patterns: ["git reset --hard", "git clean -fdx"]
+    reason: "Irreversible git operations"
+
+# ---- Review Required ----
+# Permissions that require human review before granting
+
+review_required:
+  - permission: Bash
+    patterns: ["npm install", "npm uninstall", "pip install", "pip uninstall"]
+    reason: "Package installation can modify environment"
+
+  - permission: Bash
+    patterns: ["git push", "git merge", "git rebase"]
+    reason: "Git write operations can affect repository"
+
+  - permission: Write
+    patterns: ["**/docs/**", "**/*.md"]
+    reason: "Documentation changes"
+
+  - permission: Write
+    patterns: ["**/database/**", "**/*.sql"]
+    reason: "Database schema changes"
+
+  - permission: Agent
+    reason: "Spawning sub-agents can have significant impact"
+
+  - permission: Write
+    patterns: ["**/*.js", "**/*.css", "**/public/**"]
+    reason: "Frontend asset changes"
+
+# ---- Project-Specific Rules ----
+
+project_context:
+  name: "broker-agents"
+  description: "Multi-agent investment assistant"
+  constraints:
+    - "No port forwarding required (uses Cloudflare Tunnel)"
+    - "API keys via environment variables only"
+    - "All trades require human approval"
+    - "Skills hot-loaded from markdown files"
+
+  sensitive_operations:
+    - "Trade execution (must have human approval)"
+    - "Database writes (handled via API)"
+    - "External API calls (should go through backend)"
+    - "Git operations (prefer individual commits over force pushes)"
+
+  trusted_directories:
+    - "agents/ - Python agent code"
+    - "dashboard/ - Frontend and backend"
+    - "config/ - Configuration files"
+    - "tests/ - Test files"
+
+  restricted_directories:
+    - "data/ - Runtime data, no direct write"
+    - ".env - Environment variables"
+    - "**/node_modules/ - No modification"
