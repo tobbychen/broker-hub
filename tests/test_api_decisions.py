@@ -1,7 +1,21 @@
 """Tests for decisions API."""
 import pytest
+import aiosqlite
+from pathlib import Path
 from httpx import AsyncClient, ASGITransport
-from dashboard.backend.main import app
+from dashboard.backend.main import app, init_db
+
+
+@pytest.fixture(autouse=True)
+async def clean_db():
+    """Ensure clean database state before each test."""
+    db_path = Path("data/broker_agents.db")
+    db_path.unlink(missing_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    # Run init_db to create tables
+    await init_db()
+    yield
+    db_path.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -17,9 +31,9 @@ async def test_pending_decisions_empty():
 
 @pytest.mark.asyncio
 async def test_resolve_decision_not_found():
-    """Test resolving a non-existent decision returns 404 or 200."""
+    """Test resolving a non-existent decision - Phase 1 doesn't validate existence."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/api/decisions/99999/resolve", json={"approved": True})
-    # Will succeed since we're not validating existence in Phase 1
-    assert response.status_code in (200, 404)
+    # Phase 1: SQLite UPDATE doesn't fail for non-existent ID
+    assert response.status_code == 200

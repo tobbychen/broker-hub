@@ -1,7 +1,35 @@
 """Tests for portfolio API."""
 import pytest
+import aiosqlite
+from pathlib import Path
 from httpx import AsyncClient, ASGITransport
 from dashboard.backend.main import app
+
+
+# Use in-memory database for tests
+TEST_DB = "data/test_broker_agents.db"
+
+
+@pytest.fixture(autouse=True)
+async def clean_db():
+    """Ensure clean database state before each test."""
+    db_path = Path("data/broker_agents.db")
+    db_path.unlink(missing_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db = await aiosqlite.connect(str(db_path))
+    db.row_factory = aiosqlite.Row
+    schema_path = Path(__file__).parent.parent / "database" / "schema.sql"
+    with open(schema_path, encoding="utf-8") as f:
+        schema = f.read()
+    for stmt in schema.split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            await db.execute(stmt)
+    await db.commit()
+    await db.close()
+    yield
+    # Cleanup after test
+    db_path.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
