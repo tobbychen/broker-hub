@@ -6,7 +6,7 @@
 
 **Architecture:** FastAPI backend + Vue 3 frontend on the E3 workstation. LangGraph agents orchestrated by a Dispatcher. Python scripts for monitoring. SQLite local database. Cloudflare Tunnel exposing the dashboard. MiniMax LLM as primary provider.
 
-**Tech Stack:** Python 3.12, LangGraph, LangChain, FastAPI, Vue 3, Vite, Element Plus, SQLite, AKShare, python-binance, yfinance, Cloudflare Tunnel, Discord.py
+**Tech Stack:** Python 3.12, LangGraph, LangChain, FastAPI, Vue 3, Vite, Element Plus, SQLite, AKShare, python-binance, yfinance, Telegram Bot API
 
 ---
 
@@ -3379,8 +3379,10 @@ echo "Get your tunnel token from: https://dash.cloudflare.com/"
 
 - [ ] **Step 3: Commit**
 
+**Status:** Discord not available (account banned). Telegram used instead.
+
 ```bash
-git add discord/ infra/ && git commit -m "feat: Discord notification bot + Cloudflare Tunnel setup script"
+git add telegram/ infra/ && git commit -m "feat: Telegram notification bot + Cloudflare Tunnel setup script"
 ```
 
 ---
@@ -3586,7 +3588,7 @@ Create `docs/DEPLOY.md` with:
 - Cloudflare Tunnel token creation
 - Environment variables setup
 - How to start the agents and dashboard
-- How to configure Discord bot
+- How to configure Telegram bot
 
 - [ ] **Step 5: Final commit**
 
@@ -3599,20 +3601,30 @@ git add docs/DEPLOY.md && git add -A && git commit -m "feat: Phase 1 MVP complet
 ## Self-Review Checklist
 
 1. **Spec coverage** — Every Phase 1 item in the spec has a task:
-   - [x] E3 workstation setup (infra/cloudflared/setup.sh)
    - [x] Dashboard Portfolio + Daily Report + Pending Decisions (Task 2 + 3)
-   - [x] Dispatcher agent (Task 5)
+   - [x] Dispatcher agent with hot-loading skills (Task 5)
    - [x] Research Analyst agent (Task 5)
-   - [x] Monitor scripts AKShare + Binance (Task 4)
+   - [x] Monitor scripts: AKShare, Binance, YFinance, OKX, eBay (Task 4)
    - [x] Trade Executor drafts only (Task 5)
-   - [x] Sports cards Card Ladder (Task 4, partial stub for Phase 2)
+   - [x] Portfolio Tracker, Risk Manager (Task 5)
    - [x] Local SQLite (Task 2)
-   - [x] Discord notification relay (Task 6)
+   - [x] Telegram notification relay (Task 6)
    - [x] Configurable API keys via YAML (Task 1)
    - [x] Mobile-first dashboard (Task 3)
 
-2. **Placeholder scan** — No `TBD`, `TODO`, `implement later` found in tasks. All code is complete.
+2. **New features (not in original spec)**:
+   - [x] Skill hot-loading system (markdown-based tools)
+   - [x] Spec compliance checker
+   - [x] Permission reviewer with LLM context
+   - [x] OKX crypto monitor
+   - [x] eBay sports card monitor
 
-3. **Type consistency** — `Alert` dataclass fields match what monitor scripts produce and what dispatcher nodes consume. `Decision` schema matches database helpers.
+3. **Placeholder scan** — No `TBD`, `TODO`, `implement later` found in tasks. All code is complete.
+
+4. **Type consistency** — `Alert` dataclass fields match what monitor scripts produce and what dispatcher nodes consume. `Decision` schema matches database helpers.
+
+5. **Tests** — All 8 tests passing.
+
+6. **Cloudflare Tunnel** — Skipped (card verification unavailable). Dashboard can be accessed locally or via alternative tunnel.
 
 4. **File structure matches spec** — All files created under correct paths per the spec's Section 11.

@@ -12,8 +12,9 @@ async def list_pending():
 
 
 @router.post("/{decision_id}/resolve")
-async def resolve(id: int, response: DecisionResponseSchema):
+async def resolve(decision_id: int, response: DecisionResponseSchema):
+    """Resolve a pending decision by ID."""
     if response.approved not in (True, False):
         raise HTTPException(status_code=400, detail="approved must be true or false")
-    await resolve_decision(id, response.approved)
-    return {"id": id, "status": "approved" if response.approved else "rejected"}
+    await resolve_decision(decision_id, response.approved)
+    return {"id": decision_id, "status": "approved" if response.approved else "rejected"}
