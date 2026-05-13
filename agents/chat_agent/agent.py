@@ -14,6 +14,7 @@ from .skills import (
     remove_from_watchlist,
     analyze_watchlist_asset,
     list_my_watchlist,
+    get_latest_price,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ CHAT_SYSTEM = """你是一个投资助手的智能聊天界面。用户通过Tel
 - analyze_watchlist_asset(symbol, asset_class): 分析监控列表中的某个资产，调用研究agent深度分析
 - remove_from_watchlist(symbol, asset_class): 移除监控
 - list_my_watchlist(): 查看当前所有监控项
+- get_latest_price(symbol, asset_class): 查询某个资产的最新价格，如"查一下RW-875-10D的价格"
 
 规则：
 - 用中文回答
@@ -73,6 +75,7 @@ async def free_chat(message: str) -> str:
         remove_from_watchlist,
         analyze_watchlist_asset,
         list_my_watchlist,
+        get_latest_price,
     ])
 
     try:
@@ -100,6 +103,7 @@ async def free_chat(message: str) -> str:
             remove_from_watchlist.name: remove_from_watchlist,
             analyze_watchlist_asset.name: analyze_watchlist_asset,
             list_my_watchlist.name: list_my_watchlist,
+            get_latest_price.name: get_latest_price,
         }
         for call in response.tool_calls:
             tool_name = call["name"]

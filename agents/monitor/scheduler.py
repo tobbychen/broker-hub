@@ -23,22 +23,29 @@ from telegram.bot import get_notifier
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-MONITORS = [
+# Standard monitors (crypto, stocks, sports cards) - fast interval
+STANDARD_MONITORS = [
     BinanceMonitor(),
     OKXMonitor(),
     AKShareMonitor(),
     YFinanceMonitor(),
     EbayMonitor(),               # sports cards
+]
+
+# Merchandise monitors - slower interval
+MERCHANDISE_MONITORS = [
     EbayMerchandiseMonitor(),    # merchandise on eBay
     AmazonMonitor(),             # merchandise on Amazon
     JDMonitor(),                 # merchandise on JD
 ]
 
+ALL_MONITORS = STANDARD_MONITORS + MERCHANDISE_MONITORS
 
-async def run_monitor_cycle() -> list[Alert]:
-    """Run one cycle of all monitors. Return all alerts."""
+
+async def run_monitor_cycle(monitors: list) -> list[Alert]:
+    """Run one cycle of monitors. Return all alerts."""
     all_alerts: list[Alert] = []
-    for monitor in MONITORS:
+    for monitor in monitors:
         try:
             alerts = await monitor.check()
             all_alerts.extend(alerts)
@@ -53,7 +60,7 @@ async def send_watchlist_card():
     """Fetch and send a watchlist card to Telegram."""
     await agents_db.init_db()
     all_items = []
-    for monitor in MONITORS:
+    for monitor in ALL_MONITORS:
         try:
             items = await monitor.get_watchlist()
             all_items.extend(items)
@@ -68,18 +75,35 @@ async def send_watchlist_card():
 
 
 async def scheduler_loop():
-    """Main scheduler loop — runs monitors and triggers dispatcher for each cycle."""
+    """Main scheduler loop — runs standard monitors fast, merchandise monitors slow."""
     from ..dispatcher.graph import get_dispatcher
 
     settings = get_agent_settings()
-    interval = settings.get("monitor", {}).get("check_interval_seconds", 60)
+    standard_interval = settings.get("monitor", {}).get("check_interval_seconds", 60)
+    merchandise_interval = settings.get("merchandise", {}).get("check_interval_seconds", 300)
 
-    logger.info(f"Monitor scheduler started — interval: {interval}s")
+    logger.info(f"Monitor scheduler started — standard: {standard_interval}s, merchandise: {merchandise_interval}s")
+
+    standard_counter = 0
+    merchandise_counter = 0
+
     while True:
         try:
-            all_alerts = await run_monitor_cycle()
+            all_alerts = []
 
-            # Trigger dispatcher with alerts — fixes the scheduler → dispatcher gap
+            # Always run standard monitors
+            standard_counter += standard_interval
+            alerts = await run_monitor_cycle(STANDARD_MONITORS)
+            all_alerts.extend(alerts)
+
+            # Run merchandise monitors on their interval
+            merchandise_counter += standard_interval
+            if merchandise_counter >= merchandise_interval:
+                merchandise_counter = 0
+                alerts = await run_monitor_cycle(MERCHANDISE_MONITORS)
+                all_alerts.extend(alerts)
+
+            # Trigger dispatcher with alerts
             if all_alerts:
                 logger.info(f"[scheduler] Dispatching {len(all_alerts)} alert(s) to dispatcher")
                 try:
@@ -90,7 +114,7 @@ async def scheduler_loop():
                     logger.error(f"[scheduler] Dispatcher error: {e}")
         except Exception as e:
             logger.error(f"Scheduler cycle error: {e}")
-        await asyncio.sleep(interval)
+        await asyncio.sleep(standard_interval)
 
 
 async def main():

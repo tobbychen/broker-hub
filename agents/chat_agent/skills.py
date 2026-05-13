@@ -212,3 +212,79 @@ async def list_my_watchlist() -> str:
             note = f" — {v['notes']}" if v.get("notes") else ""
             lines.append(f"  • {v['symbol']}{note}")
     return "\n".join(lines)
+
+
+@tool
+async def get_latest_price(symbol: str, asset_class: str = "") -> str:
+    """Get the latest cached price for a specific asset.
+
+    Args:
+        symbol: the asset symbol (e.g. 'BTC', 'RW-875-10D', 'whiteboots-7.5d')
+        asset_class: optional filter - 'stock', 'crypto', 'sports_card', 'merchandise'"""
+    from dashboard.backend.database import get_market_cache
+
+    # Try to find the item in watchlist first
+    items = await get_watchlist_items(asset_class or None)
+    item = next((i for i in items if i["symbol"] == symbol), None)
+
+    if not item:
+        return f"未找到 {symbol} 在监控列表中"
+
+    exchange = item.get("exchange", "")
+    notes = item.get("notes", "")
+
+    # Parse notes for display
+    if asset_class == "merchandise" or "merchandise" in str(items):
+        parts = notes.split("|") if notes else []
+        brand = parts[0] if len(parts) > 0 else ""
+        model = parts[1] if len(parts) > 1 else ""
+        purchase_price = parts[3] if len(parts) > 3 else ""
+        purchase_currency = parts[4] if len(parts) > 4 else "CNY"
+    else:
+        brand = model = purchase_price = purchase_currency = ""
+
+    # Get cached price
+    cache = await get_market_cache(symbol, exchange, "latest_price")
+    if not cache:
+        cache = await get_market_cache(symbol, exchange, "merchandise_price")
+    if not cache:
+        return f"暂无可用价格数据: {symbol}"
+
+    import json
+    raw = cache.get("raw_data", "{}")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            pass
+
+    if isinstance(raw, dict):
+        current_price = raw.get("price")
+        if current_price is None:
+            return f"价格数据不完整: {symbol}"
+
+        fetched = cache.get("fetched_at", "未知")
+
+        # For merchandise, show comparison with purchase price
+        if purchase_price and float(purchase_price) > 0:
+            try:
+                change_pct = (float(current_price) - float(purchase_price)) / float(purchase_price) * 100
+                arrow = "▲" if change_pct >= 0 else "▼"
+                return (
+                    f"💰 {symbol} 最新价格\n"
+                    f"   当前价: {current_price} {purchase_currency}\n"
+                    f"   购买价: {purchase_price} {purchase_currency}\n"
+                    f"   变化: {arrow} {abs(change_pct):.1f}%\n"
+                    f"   数据时间: {fetched}"
+                )
+            except Exception:
+                pass
+
+        return (
+            f"💰 {symbol} 最新价格\n"
+            f"   当前价: {current_price}\n"
+            f"   平台: {exchange}\n"
+            f"   数据时间: {fetched}"
+        )
+
+    return f"价格数据格式错误: {symbol}"

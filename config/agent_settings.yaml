@@ -6,6 +6,11 @@ agents:
     arbitrage_threshold: 0.005
     card_price_threshold: 0.05
 
+  merchandise:
+    check_interval_seconds: 300  # 5 minutes - less frequent than crypto/stocks
+    price_drop_threshold: 0.10   # Alert if price drops 10% from purchase
+    arbitrage_threshold: 0.10     # Alert if same item 10% cheaper elsewhere
+
   research:
     timeout_seconds: 120
     max_sources: 5
