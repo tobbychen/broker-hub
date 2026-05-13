@@ -13,6 +13,9 @@ from .binance_monitor import BinanceMonitor
 from .okx_monitor import OKXMonitor
 from .yfinance_monitor import YFinanceMonitor
 from .ebay_monitor import EbayMonitor
+from .ebay_merchandise_monitor import EbayMerchandiseMonitor
+from .amazon_monitor import AmazonMonitor
+from .jd_monitor import JDMonitor
 from ..config import get_agent_settings
 from .. import database as agents_db
 from telegram.bot import get_notifier
@@ -25,7 +28,10 @@ MONITORS = [
     OKXMonitor(),
     AKShareMonitor(),
     YFinanceMonitor(),
-    EbayMonitor(),
+    EbayMonitor(),               # sports cards
+    EbayMerchandiseMonitor(),    # merchandise on eBay
+    AmazonMonitor(),             # merchandise on Amazon
+    JDMonitor(),                 # merchandise on JD
 ]
 
 

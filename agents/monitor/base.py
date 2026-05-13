@@ -17,6 +17,22 @@ class Alert:
     priority: str = "normal"
 
 
+@dataclass
+class MerchandiseAlert(Alert):
+    """Alert for merchandise price changes with cross-platform data."""
+    brand: str = ""
+    model: str = ""
+    variant: str = ""
+    platforms: dict = field(default_factory=dict)  # {"eBay": 150.00, "Amazon": 145.00, ...}
+    purchase_price: float = 0.0
+    purchase_currency: str = "CNY"
+    current_price: float = 0.0
+    current_platform: str = ""
+    change_pct: float = 0.0
+    arbitrage_opportunity: bool = False
+    source_platform: str = ""
+
+
 class BaseMonitor(ABC):
     """Base class for all market monitors."""
 
