@@ -56,6 +56,49 @@ async def add_sports_card_watchlist(
 
 
 @tool
+async def add_merchandise_watchlist(
+    symbol: str,
+    brand: str = "",
+    model: str = "",
+    variant: str = "",
+    purchase_price: str = "",
+    purchase_currency: str = "CNY",
+    exchange: str = "eBay",
+) -> str:
+    """Add a branded merchandise item to the monitoring watchlist.
+
+    Args:
+        symbol: unique identifier for this item (e.g. 'whiteboots-7.5d', 'RW-875-10D')
+        brand: brand name (e.g. 'Red Wing', 'Timberland')
+        model: model name/number (e.g. '875', '10061')
+        variant: size or specific variant (e.g. 'Size 10D', '7.5')
+        purchase_price: original purchase price (e.g. '149.99')
+        purchase_currency: 'CNY' or 'USD' (default: CNY)
+        exchange: 'eBay', 'Amazon', or 'JD' (default: eBay)"""
+    # Build notes format: Brand|Model|Variant|PurchasePrice|PurchaseCurrency
+    price = purchase_price if purchase_price else "0"
+    notes = f"{brand}|{model}|{variant}|{price}|{purchase_currency}"
+
+    # Store the symbol as the item identifier
+    item_symbol = f"{symbol}" if symbol else f"{brand}-{model}-{variant}".replace(" ", "")
+
+    await upsert_watchlist_item("merchandise", item_symbol, exchange, notes)
+
+    # Build confirmation message
+    info_parts = [p for p in [brand, model, variant] if p]
+    info_str = " ".join(info_parts) if info_parts else symbol
+    price_str = f"{purchase_price} {purchase_currency}" if purchase_price else "未设置购买价格"
+
+    return (
+        f"✅ 已添加商品监控: {info_str}\n"
+        f"   型号: {symbol}\n"
+        f"   购买价: {price_str}\n"
+        f"   平台: {exchange}\n"
+        f"   将跨平台监控价格变动"
+    )
+
+
+@tool
 async def search_and_add_stock(name: str) -> str:
     """Search for a Chinese A-share stock by company name and add it to monitoring.
 
@@ -92,12 +135,12 @@ async def search_and_add_stock(name: str) -> str:
 
 
 @tool
-async def remove_from_watchlist(symbol: str, asset_class: Literal["stock", "crypto", "sports_card"]) -> str:
+async def remove_from_watchlist(symbol: str, asset_class: Literal["stock", "crypto", "sports_card", "merchandise"]) -> str:
     """Remove an asset from the monitoring watchlist.
 
     Args:
         symbol: the symbol to remove (e.g. '600519', 'BTC')
-        asset_class: 'stock', 'crypto', or 'sports_card'"""
+        asset_class: 'stock', 'crypto', 'sports_card', or 'merchandise'"""
     items = await get_watchlist_items(asset_class)
     item = next((i for i in items if i["symbol"] == symbol), None)
     if not item:
@@ -150,7 +193,7 @@ async def list_my_watchlist() -> str:
     """List all assets currently being monitored, grouped by asset class."""
     items = await get_watchlist_items()
     if not items:
-        return "📋 监控列表为空。告诉我添加要监控的资产，例如：\n- 监控股票 600519\n- 跟踪 BTC\n- 添加 Charizard 球星卡"
+        return "📋 监控列表为空。告诉我添加要监控的资产，例如：\n- 监控股票 600519\n- 跟踪 BTC\n- 添加 Charizard 球星卡\n- 添加商品 whiteboots-7.5d"
 
     groups: dict[str, list] = {}
     for it in items:
@@ -158,7 +201,12 @@ async def list_my_watchlist() -> str:
 
     lines = ["📋 当前监控列表:"]
     for cls, vals in sorted(groups.items()):
-        label = {"stock": "A股", "crypto": "加密货币", "sports_card": "球星卡"}.get(cls, cls)
+        label = {
+            "stock": "A股",
+            "crypto": "加密货币",
+            "sports_card": "球星卡",
+            "merchandise": "商品",
+        }.get(cls, cls)
         lines.append(f"\n【{label}】")
         for v in vals:
             note = f" — {v['notes']}" if v.get("notes") else ""

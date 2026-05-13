@@ -9,6 +9,7 @@ from .skills import (
     add_stock_watchlist,
     add_crypto_watchlist,
     add_sports_card_watchlist,
+    add_merchandise_watchlist,
     search_and_add_stock,
     remove_from_watchlist,
     analyze_watchlist_asset,
@@ -30,6 +31,7 @@ CHAT_SYSTEM = """你是一个投资助手的智能聊天界面。用户通过Tel
 - add_stock_watchlist(symbol, notes): 添加A股监控，symbol需是6位数字如'600519'
 - add_crypto_watchlist(symbol, exchange): 添加加密货币监控，如'BTC'
 - add_sports_card_watchlist(name, set_name, year, ...): 添加球星卡监控
+- add_merchandise_watchlist(symbol, brand, model, variant, purchase_price, purchase_currency): 添加商品监控，如品牌包包、靴子、手表等
 - search_and_add_stock(name): 按公司名搜索A股代码并加入监控，如"贵州茅台"
 - analyze_watchlist_asset(symbol, asset_class): 分析监控列表中的某个资产，调用研究agent深度分析
 - remove_from_watchlist(symbol, asset_class): 移除监控
@@ -39,7 +41,9 @@ CHAT_SYSTEM = """你是一个投资助手的智能聊天界面。用户通过Tel
 - 用中文回答
 - 简洁但信息丰富
 - 如果不需要调用技能，直接回答用户问题
-- 对于投资建议类问题，提醒用户这是参考信息，需自行判断"""
+- 对于投资建议类问题，提醒用户这是参考信息，需自行判断
+
+注意：商品监控支持格式如"添加商品 whiteboots-7.5d"，会自动识别为商品类别"""
 
 
 def _get_chat_llm(temperature: float = 0.5):
@@ -62,6 +66,7 @@ async def free_chat(message: str) -> str:
         add_stock_watchlist,
         add_crypto_watchlist,
         add_sports_card_watchlist,
+        add_merchandise_watchlist,
         search_and_add_stock,
         remove_from_watchlist,
         analyze_watchlist_asset,
@@ -88,6 +93,7 @@ async def free_chat(message: str) -> str:
             add_stock_watchlist.name: add_stock_watchlist,
             add_crypto_watchlist.name: add_crypto_watchlist,
             add_sports_card_watchlist.name: add_sports_card_watchlist,
+            add_merchandise_watchlist.name: add_merchandise_watchlist,
             search_and_add_stock.name: search_and_add_stock,
             remove_from_watchlist.name: remove_from_watchlist,
             analyze_watchlist_asset.name: analyze_watchlist_asset,
