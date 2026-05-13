@@ -1,3 +1,30 @@
 {
-  "permissionMode": "auto"
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Bash(python*)",
+      "Bash(cd*)",
+      "Bash(pip install*)",
+      "Bash(npm*)",
+      "Bash(uvicorn*)",
+      "Bash(curl*)",
+      "Bash(netstat*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(grep*)",
+      "Bash(mkdir*)",
+      "Bash(rmdir*)",
+      "Bash(echo*)",
+      "Bash(chmod*)",
+      "Bash(pkill*)",
+      "Bash(taskkill*)",
+      "Bash(sleep*)",
+      "Bash(curl*)",
+      "Read(**/*)",
+      "Write(agents/**/*)",
+      "Write(dashboard/**/*)",
+      "Write(config/**/*)",
+      "Write(tests/**/*)"
+    ]
+  }
 }

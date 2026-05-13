@@ -10,6 +10,7 @@ declare module 'vue' {
     BottomNav: typeof import('./src/components/BottomNav.vue')['default']
     ChatPanel: typeof import('./src/components/ChatPanel.vue')['default']
     DecisionCard: typeof import('./src/components/DecisionCard.vue')['default']
+    ElIcon: typeof import('element-plus/es')['ElIcon']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }
