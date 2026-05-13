@@ -164,8 +164,57 @@ class EbayMerchandiseMonitor(BaseMonitor):
 
         return None
 
+    def _extract_size_from_title(self, title: str) -> str | None:
+        """Extract size from eBay item title. Returns normalized size or None."""
+        import re
+        title_lower = title.lower()
+
+        # Common size patterns in eBay titles
+        # "Size 10 D", "Size 10D", "Size 10", "10 D", "10D", "US 10"
+        patterns = [
+            r'size\s*(\d+(?:\.\d+)?\s*[a-z]?)',  # Size 10D, Size 10 D
+            r'\b(\d+(?:\.\d+)?)\s*[a-z]\b',  # 10D, 9.5B
+            r'\bus\s*(\d+(?:\.\d+)?)\b',  # US 10
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, title_lower)
+            if match:
+                return match.group(1).strip().upper()
+
+        return None
+
+    def _size_matches(self, title: str, target_variant: str) -> bool:
+        """Check if item title matches target size/variant."""
+        if not target_variant:
+            return True  # No variant specified, accept all
+
+        # Normalize variant (e.g., "7.5D" -> "7.5", "10D" -> "10")
+        import re
+        variant_clean = re.sub(r'[a-zA-Z]', '', target_variant).strip()
+        variant_letter = re.sub(r'[\d.\s]', '', target_variant).strip().upper()
+
+        title_size = self._extract_size_from_title(title)
+        if not title_size:
+            return False  # Can't determine size
+
+        # Check if numbers match (allow some fuzzy matching)
+        title_num = re.sub(r'[a-zA-Z]', '', title_size).strip()
+        if variant_clean and title_num:
+            try:
+                if abs(float(title_num) - float(variant_clean)) < 0.5:
+                    # Numbers match, check letter if present
+                    if variant_letter:
+                        title_letter = re.sub(r'[\d.\s]', '', title_size).strip().upper()
+                        return variant_letter == title_letter or not title_letter
+                    return True
+            except ValueError:
+                pass
+
+        return False
+
     async def _fetch_price(self, token: str, search_term: str, variant: str = "") -> float | None:
-        """Query eBay sold/completed listings and return median price."""
+        """Query eBay for items and return median price, filtering by size if variant specified."""
         headers = {
             "Authorization": f"Bearer {token}",
             "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
@@ -176,11 +225,8 @@ class EbayMerchandiseMonitor(BaseMonitor):
             "q": search_term,
             "filter": "buyingOptions:FIXED_PRICE",
             "sort": "endDate:asc",
-            "limit": "10",
+            "limit": "20",  # Get more results to filter
         }
-
-        if variant:
-            params["q"] = f"{search_term} {variant}"
 
         try:
             resp = requests.get(
@@ -197,6 +243,16 @@ class EbayMerchandiseMonitor(BaseMonitor):
             items = resp.json().get("itemSummaries", [])
             if not items:
                 return None
+
+            # Filter by size if variant specified
+            if variant:
+                filtered_items = [
+                    i for i in items
+                    if self._size_matches(i.get("title", ""), variant)
+                ]
+                if filtered_items:
+                    items = filtered_items
+                    logger.info(f"[ebay_merchandise] Filtered to {len(items)} items matching size {variant}")
 
             prices = [float(i.get("price", {}).get("value", 0)) for i in items if i.get("price", {}).get("value")]
             if not prices:
