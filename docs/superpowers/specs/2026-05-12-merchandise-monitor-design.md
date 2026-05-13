@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-A new product category monitor that tracks branded merchandise prices across multiple platforms (eBay, Amazon, Alibaba, Xianyu, PDD). Designed for two use cases:
+A new product category monitor that tracks branded merchandise prices across multiple platforms (eBay, Amazon, JD, Taobao, Alibaba, Xianyu, PDD). Designed for two use cases:
 - **Own items for sale**: Track price changes of owned inventory to optimize selling timing
 - **Underpriced opportunities**: Find items priced below market value for arbitrage/flipping
 
@@ -15,11 +15,12 @@ A new product category monitor that tracks branded merchandise prices across mul
 ## 2. Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     MERCHANDISE MONITORS                     │
-├─────────────┬─────────────┬─────────────┬────────────┬────┤
-│ eBayMonitor │AmazonMonitor│AliMonitor   │XianyuMonitor│PDD │
-└─────────────┴─────────────┴─────────────┴────────────┴────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MERCHANDISE MONITORS                            │
+├───────────┬───────────┬────────┬─────────┬──────┬─────────┬───────┬──────────┤
+│ eBay     │ Amazon   │ JD     │ Taobao  │ Ali  │ Xianyu  │ PDD   │          │
+│ Monitor  │ Monitor  │Monitor │ Monitor │Mon.  │ Monitor │Monitor │          │
+└───────────┴───────────┴────────┴─────────┴──────┴─────────┴───────┴──────────┘
                             │
                      BaseMerchandiseMonitor
                      (inherits BaseMonitor)
@@ -144,15 +145,21 @@ merchandise:
     amazon:
       enabled: true
       priority: 2
-    alibaba:
-      enabled: false  # require credentials
+    jd:
+      enabled: true
       priority: 3
-    xianyu:
+    taobao:
       enabled: false  # require credentials
       priority: 4
-    pdd:
+    alibaba:
       enabled: false  # require credentials
       priority: 5
+    xianyu:
+      enabled: false  # require credentials
+      priority: 6
+    pdd:
+      enabled: false  # require credentials
+      priority: 7
 ```
 
 ### 6.2 API Credentials (config/api_providers.yaml)
@@ -181,12 +188,14 @@ MONITORS = [
     OKXMonitor(),
     AKShareMonitor(),
     YFinanceMonitor(),
-    EbayMonitor(),          # sports cards
+    EbayMonitor(),              # sports cards
     EbayMerchandiseMonitor(),   # NEW: merchandise on eBay
-    AmazonMonitor(),            # NEW
+    AmazonMonitor(),             # NEW
+    JDMonitor(),                # NEW: JD (Jingdong)
+    TaobaoMonitor(),            # NEW
     AlibabaMonitor(),           # NEW
-    XianyuMonitor(),           # NEW
-    PDDMonitor(),              # NEW
+    XianyuMonitor(),            # NEW
+    PDDMonitor(),               # NEW
 ]
 ```
 
@@ -208,20 +217,27 @@ MONITORS = [
 
 ## 9. Implementation Phases
 
-### Phase 1: eBay Extension (Immediate)
+### Phase 1: eBay + Amazon (Week 1)
 - Extend existing EbayMonitor to support merchandise category
 - Reuse OAuth flow, adjust search to brand+model pattern
+- Implement AmazonMonitor (PA-API)
 - Add merchandise-specific watchlist parsing
 
-### Phase 2: Amazon Monitor (Week 2)
-- Implement AmazonMonitor
-- Investigate API vs scraping approach
+### Phase 2: JD (Jingdong) (Week 2)
+- Implement JDMonitor using JD Open Platform
+- Most accessible China platform API
+- Handle CNY pricing
 - Add credentials to config
 
-### Phase 3: China Platforms (Week 3-4)
-- Implement Xianyu, PDD, Alibaba monitors
-- Handle CNY-only pricing
-- Investigate data access methods per platform
+### Phase 3: Taobao, Alibaba (Week 3)
+- Implement TaobaoMonitor (affiliate API or scraping)
+- Implement AlibabaMonitor (1688)
+- Investigate credentials/access
+
+### Phase 4: Xianyu, PDD (Week 4)
+- Implement XianyuMonitor (app scraping or third-party)
+- Implement PDDMonitor (third-party data or scraping)
+- Investigate data access methods
 
 ---
 
@@ -233,6 +249,8 @@ agents/monitor/
 ├── ebay_monitor.py            # sports cards (existing)
 ├── ebay_merchandise_monitor.py # NEW: merchandise on eBay
 ├── amazon_monitor.py          # NEW
+├── jd_monitor.py              # NEW: JD (Jingdong)
+├── taobao_monitor.py          # NEW
 ├── alibaba_monitor.py         # NEW
 ├── xianyu_monitor.py          # NEW
 ├── pdd_monitor.py             # NEW
@@ -242,6 +260,43 @@ agents/monitor/
 ---
 
 ## 11. API Access Investigation
+
+### 11.1 JD (Jingdong) - 京东
+
+**Official API Options:**
+- **JD Open Platform** (open.jd.com): Developer-friendly, has public APIs
+- APIs available: product search, price, reviews, sales data
+- Requires registration (individual/enterprise), API key access
+- Has a free tier with rate limits
+
+**API Coverage:**
+- Product search by keywords
+- Real-time price data
+- Sales/commission data (for affiliate)
+- More reliable than Taobao APIs
+
+**Recommended Path:** JD Open Platform — most accessible of China platforms
+
+---
+
+### 11.2 Taobao - 淘宝
+
+**Official API Options:**
+- **Taobao Open Platform** (open.taobao.com): Part of Alibaba ecosystem
+- APIs require enterprise account or Taobao store
+- Individual access very limited
+- Similar restrictions to 1688
+
+**Alternative Approaches:**
+- **Taobao affiliate program**: Product data access for affiliates
+- **Third-party aggregators**: 淘客 (Taoke) APIs, 折800, etc.
+- **Web scraping**: Possible but violates ToS
+
+**Recommended Path:** Check Taobao affiliate access or use third-party data services
+
+---
+
+### 11.3 Alibaba / 1688
 
 ### 11.1 Alibaba / 1688
 
@@ -296,9 +351,11 @@ agents/monitor/
 |----------|--------------|-------------------|---------------------|
 | eBay | Yes (Browse API) | Easy (OAuth2) | Direct API - existing |
 | Amazon | Yes (PA-API) | Medium (AWS creds) | PA-API or scraping |
+| **JD (京东)** | **Yes (Open Platform)** | **Easy-Medium** | **JD Open Platform - most accessible China API** |
+| **Taobao** | **Partial** | **Hard (enterprise)** | **Affiliate API or third-party** |
 | Alibaba/1688 | Partial | Hard (enterprise) | Affiliate API or 蝉妈妈 |
 | Xianyu | No | Very Hard | App scraping or third-party |
-| PDD | Partial | Hard | Affiliate API or third-party |
+| PDD | Pinduoduo) | Partial | Hard | Affiliate API or third-party |
 
 ---
 
