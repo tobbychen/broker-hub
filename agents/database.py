@@ -96,7 +96,7 @@ async def set_market_cache(
             ON CONFLICT(symbol, exchange, data_type)
             DO UPDATE SET raw_data=excluded.raw_data, fetched_at=excluded.fetched_at
             """,
-            (symbol, exchange, data_type, json.dumps(raw_data, ensure_ascii=False), datetime.now().isoformat()),
+            (symbol, exchange, data_type, json.dumps(raw_data, ensure_ascii=False), datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
         )
         await db.commit()
 
@@ -105,19 +105,17 @@ async def get_market_cache(
     symbol: str,
     data_type: str,
     exchange: str = "",
-    max_age_seconds: int = 300,
+    max_age_seconds: int = 86400,
 ) -> Optional[dict]:
-    """Get cached market data if fresh enough."""
+    """Get cached market data if fresh enough. Default max_age is 24 hours."""
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
-        rows = await db.execute(
-            """
+        sql = """
             SELECT * FROM market_cache
-            WHERE symbol=? AND exchange=? AND data_type=?
-            AND (strftime('%s','now') - strftime('%s', fetched_at)) < ?
-            """,
-            (symbol, exchange, data_type, max_age_seconds),
-        )
+            WHERE symbol=? AND data_type=? AND exchange=?
+            ORDER BY fetched_at DESC LIMIT 1
+            """
+        rows = await db.execute(sql, (symbol, exchange, data_type))
         row = await rows.fetchone()
         if row:
             d = dict(row)
