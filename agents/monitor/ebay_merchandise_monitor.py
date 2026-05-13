@@ -115,6 +115,9 @@ class EbayMerchandiseMonitor(BaseMonitor):
     async def _check_item(self, token: str, item: dict) -> MerchandiseAlert | None:
         meta = self._parse_notes(item.get("notes", ""))
         search_term = f"{meta.get('brand', '')} {meta.get('model', '')}".strip()
+        # Fallback to symbol if brand/model empty
+        if not search_term:
+            search_term = item.get("symbol", "")
         if not search_term:
             return None
 
