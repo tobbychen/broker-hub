@@ -1,4 +1,4 @@
-"""Research Analyst LLM agent."""
+"""Research Analyst LLM agent — enhanced with asset-class specialization."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -6,29 +6,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from ..config import get_llm_config
-
-RESEARCH_SYSTEM = """你是一个专业的投资研究分析师。你的任务是：
-1. 深度分析市场警报是否构成真实的投资机会
-2. 收集并整合多个数据来源的信息
-3. 给出置信度评估和风险评级
-4. 用清晰的中文解释分析逻辑
-
-分析维度：
-- 基本面：相关新闻、宏观数据、行业趋势
-- 技术面：价格走势、成交量、关键支撑/压力位
-- 风险因素：市场情绪、政策风险、流动性风险
-
-输出格式：
-置信度: XX%
-风险等级: low/medium/high
-分析理由: ...
-建议行动: buy/sell/hold
-建议数量: (如适用)
-"""
+from .prompts import RESEARCH_SYSTEM, format_research_prompt, format_asset_class_hint
 
 
-async def research_opportunity(alert: dict, portfolio_context: str = "") -> str:
-    """Run research analysis on an alert opportunity."""
+async def research_opportunity(
+    alert: dict,
+    portfolio_context: str = "",
+    asset_class: str = None
+) -> str:
+    """
+    Run research analysis on an alert opportunity.
+
+    Args:
+        alert: Alert dictionary with source, symbol, details, etc.
+        portfolio_context: Current portfolio state as string
+        asset_class: Override asset class detection (optional)
+
+    Returns:
+        JSON-formatted research analysis with confidence and recommendation
+    """
     cfg = get_llm_config()
     primary = cfg.get("primary", {})
     llm = ChatOpenAI(
@@ -38,19 +34,26 @@ async def research_opportunity(alert: dict, portfolio_context: str = "") -> str:
         temperature=0.3,
     )
 
-    prompt = f"""请分析以下投资机会：
+    # Detect asset class from alert source if not provided
+    if not asset_class:
+        source = alert.get("source", "").lower()
+        if "akshare" in source or "yfinance" in source:
+            asset_class = "stock"
+        elif "binance" in source or "okx" in source or "crypto" in source:
+            asset_class = "crypto"
+        elif "sports_card" in source or "ebay" in source:
+            asset_class = "sports_card"
+        elif "merchandise" in source:
+            asset_class = "merchandise"
+        else:
+            asset_class = "stock"
 
-警报详情：
-- 来源: {alert.get('source')}
-- 类型: {alert.get('alert_type')}
-- 标的: {alert.get('symbol')}
-- 交易所: {alert.get('exchange')}
-- 详情: {alert.get('details')}
+    # Add asset class hints to prompt
+    asset_hint = format_asset_class_hint(asset_class)
 
-当前投资组合：
-{portfolio_context}
-
-请给出完整分析。"""
+    # Build the research prompt
+    prompt = format_research_prompt(alert, portfolio_context)
+    prompt += f"\n\n### 资产类别分析提示\n{asset_hint}"
 
     response = await llm.ainvoke([
         SystemMessage(content=RESEARCH_SYSTEM),

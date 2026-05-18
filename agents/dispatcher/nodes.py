@@ -1,11 +1,11 @@
-"""LangGraph nodes for the Dispatcher orchestrator."""
+"""LangGraph nodes for the Dispatcher orchestrator — enhanced with Chain-of-Thought."""
 import json
 import re
 import logging
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import tool
-from .prompts import DISPATCHER_SYSTEM, format_alert_for_dispatcher
+from .prompts import DISPATCHER_SYSTEM, format_alert_for_dispatcher, format_portfolio_for_prompt
 from .skills.loader import get_skill_loader
 from ..research_analyst.agent import research_opportunity
 from ..trade_executor.agent import draft_order
@@ -14,6 +14,31 @@ from ..portfolio_tracker.tracker import update_portfolio, format_portfolio_summa
 from ..llm import get_single_llm
 
 logger = logging.getLogger(__name__)
+
+# Chain-of-Thought analysis prompt for dispatcher
+COT_PROMPT = """你是一个专业的投资调度员。请分析以下市场警报：
+
+{alerts}
+
+当前投资组合：
+{portfolio}
+
+### 分析步骤（请按顺序执行）
+
+步骤 1：相关性检查
+- 该标的是否在投资组合中？
+- 该标的是否在观察列表中？
+
+步骤 2：紧急程度评估
+- 价格变动是否超过阈值？
+- 是否涉及流动性风险？
+
+步骤 3：决策输出
+请为每个警报输出 JSON 格式的决策：
+{{"relevant": true/false, "reason": "原因", "action": "route_to_research/discard"}}
+
+仅输出 JSON，不要其他内容。
+"""
 
 
 def _bind_tools(llm):
@@ -54,7 +79,10 @@ async def portfolio_tracker_node(state: dict, llm) -> dict:
 # ---- Monitor Handler Node ----
 
 async def monitor_handler(state: dict, llm) -> dict:
-    """Handle incoming market alerts — determine if any are investment-relevant."""
+    """Handle incoming market alerts — determine if any are investment-relevant.
+
+    Enhanced with Chain-of-Thought prompting for better decision quality.
+    """
     alerts = state.get("alerts", [])
     if not alerts:
         return {"alerts": [], "decisions": state.get("decisions", [])}
@@ -63,22 +91,18 @@ async def monitor_handler(state: dict, llm) -> dict:
     alert_summaries = [format_alert_for_dispatcher(a) for a in alerts]
     portfolio_str = await get_skill_loader().get_skill("lookup_portfolio").fn()
 
-    prompt = f"""以下市场警报已触发：
-
-{chr(10).join(alert_summaries)}
-
-当前投资组合：
-{portfolio_str}
-
-分析这些警报是否与投资相关。如相关，请用中文解释原因并给出判断：相关/不相关。
-仅输出你的分析结论。"""
+    # Use enhanced prompt with Chain-of-Thought
+    prompt = COT_PROMPT.format(
+        alerts="\n".join(alert_summaries),
+        portfolio=format_portfolio_for_prompt(portfolio_str),
+    )
 
     response = await bound_llm.ainvoke([HumanMessage(content=prompt)])
     content = response.content.strip()
 
     decisions = state.get("decisions", [])
-    relevant_kw = ["相关", "关注", "投资", "买入", "值得", "值得关注"]
-    not_relevant_kw = ["不相关", "无关", "丢弃", "忽略", "观察即可", "继续观察"]
+    relevant_kw = ["相关", "关注", "投资", "买入", "值得", "值得关注", "route_to_research"]
+    not_relevant_kw = ["不相关", "无关", "丢弃", "忽略", "观察即可", "继续观察", "discard"]
     is_relevant = any(k in content for k in relevant_kw) and not any(
         k in content for k in not_relevant_kw
     )
@@ -101,7 +125,7 @@ async def monitor_handler(state: dict, llm) -> dict:
 async def research_router(state: dict, llm) -> dict:
     """
     Run deep research on each relevant decision.
-    Calls research_opportunity() from research_analyst/agent.py (was previously unused).
+    Enhanced with asset-class specialization via research_opportunity.
     """
     decisions = state.get("decisions", [])
     if not decisions:
@@ -131,8 +155,13 @@ async def research_router(state: dict, llm) -> dict:
         )
         d["live_price"] = price_result
 
-        # Run deep research using the Research Analyst agent
-        research_result = await research_opportunity(alert, portfolio_str)
+        # Run deep research using the enhanced Research Analyst agent
+        # Pass asset_class for specialized analysis
+        research_result = await research_opportunity(
+            alert,
+            portfolio_str,
+            asset_class=asset_class,
+        )
         d["research_result"] = research_result
         d["research_done"] = True
 

@@ -6,18 +6,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from ..config import get_llm_config
-
-EXECUTION_SYSTEM = """你是一个交易执行专家。你的职责是：
-1. 根据研究分析结果起草交易订单
-2. 订单必须包含：标的、数量、价格（或市价）、交易所
-3. 所有订单必须标注"待人类审批" — 永远不要假设已获批准
-4. 用中文输出订单详情
-
-Phase 1 规则：所有订单都需要人类批准后才能执行。永远不要执行未经批准的订单。"""
+from .prompts import EXECUTION_SYSTEM, format_order_draft_prompt
 
 
-async def draft_order(research_result: str) -> str:
-    """Draft a trade order based on research. Does NOT execute."""
+async def draft_order(research_result: str, decision_id: int = None) -> str:
+    """
+    Draft a trade order based on research. Does NOT execute.
+
+    Args:
+        research_result: JSON-formatted research analysis from Research Analyst
+        decision_id: Optional decision ID for tracking
+
+    Returns:
+        Drafted order with approval requirements
+    """
     cfg = get_llm_config()
     primary = cfg.get("primary", {})
     llm = ChatOpenAI(
@@ -27,16 +29,16 @@ async def draft_order(research_result: str) -> str:
         temperature=0.2,
     )
 
-    prompt = f"""基于以下研究分析结果，起草交易订单：
-
-{research_result}
-
-注意：这是 Phase 1，所有订单都需要人类批准后才能执行。
-请起草订单详情，标注[待审批]。"""
+    prompt = format_order_draft_prompt(research_result)
 
     response = await llm.ainvoke([
         SystemMessage(content=EXECUTION_SYSTEM),
         HumanMessage(content=prompt),
     ])
 
-    return response.content
+    # Add decision ID tracking if provided
+    result = response.content
+    if decision_id:
+        result += f"\n\n[Decision ID: {decision_id}]"
+
+    return result
