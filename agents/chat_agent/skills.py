@@ -288,3 +288,24 @@ async def get_latest_price(symbol: str, asset_class: str = "") -> str:
         )
 
     return f"价格数据格式错误: {symbol}"
+
+
+# ---- Chat-specific tool registry ----
+
+def get_all_chat_tools():
+    """Return all chat-specific tools as a list.
+
+    These are UI command tools for watchlist management,
+    distinct from dispatcher portfolio tools.
+    """
+    return [
+        add_stock_watchlist,
+        add_crypto_watchlist,
+        add_sports_card_watchlist,
+        add_merchandise_watchlist,
+        search_and_add_stock,
+        remove_from_watchlist,
+        analyze_watchlist_asset,
+        list_my_watchlist,
+        get_latest_price,
+    ]

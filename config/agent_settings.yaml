@@ -22,8 +22,18 @@ agents:
     max_correlation: 0.80
 
   autonomy:
-    small_position_limit: 10000
-    require_human_approval: true
+    enabled: false  # Phase 1: disabled, all trades need human approval
+    auto_approve:
+      max_position_value: 10000  # ¥10K max for auto-approve
+      min_confidence: 0.85       # 85% confidence minimum
+      max_risk: low              # Only low risk trades auto-approve
+      allowed_asset_class:
+        - crypto
+        - stock
+      allowed_exchanges:
+        - Binance
+        - OKX
+        - SSE/SZSE
 
   decision:
     timeout_minutes: 30

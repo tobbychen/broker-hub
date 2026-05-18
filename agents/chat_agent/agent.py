@@ -1,21 +1,11 @@
 """Chat agent for Telegram bidirectional chat."""
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import tool
 
 from agents.config import get_llm_config
+from agents.dispatcher.skills.loader import get_skill_loader
 from agents.dispatcher.tools import lookup_portfolio, lookup_pending_decisions
-from .skills import (
-    add_stock_watchlist,
-    add_crypto_watchlist,
-    add_sports_card_watchlist,
-    add_merchandise_watchlist,
-    search_and_add_stock,
-    remove_from_watchlist,
-    analyze_watchlist_asset,
-    list_my_watchlist,
-    get_latest_price,
-)
+from .skills import get_all_chat_tools
 
 logger = logging.getLogger(__name__)
 
@@ -68,17 +58,10 @@ def _get_chat_llm(temperature: float = 0.5):
 async def free_chat(message: str) -> str:
     """Handle free-form chat — LLM decides whether to call a skill tool."""
     llm = _get_chat_llm(temperature=0.5)
-    bound_llm = llm.bind_tools([
-        add_stock_watchlist,
-        add_crypto_watchlist,
-        add_sports_card_watchlist,
-        add_merchandise_watchlist,
-        search_and_add_stock,
-        remove_from_watchlist,
-        analyze_watchlist_asset,
-        list_my_watchlist,
-        get_latest_price,
-    ])
+
+    # Combine chat-specific tools with dispatcher portfolio tools
+    all_tools = get_all_chat_tools() + [lookup_portfolio, lookup_pending_decisions]
+    bound_llm = llm.bind_tools(all_tools)
 
     try:
         portfolio_str = await lookup_portfolio.ainvoke({})
@@ -96,17 +79,8 @@ async def free_chat(message: str) -> str:
     ])
 
     if response.tool_calls:
-        tool_map = {
-            add_stock_watchlist.name: add_stock_watchlist,
-            add_crypto_watchlist.name: add_crypto_watchlist,
-            add_sports_card_watchlist.name: add_sports_card_watchlist,
-            add_merchandise_watchlist.name: add_merchandise_watchlist,
-            search_and_add_stock.name: search_and_add_stock,
-            remove_from_watchlist.name: remove_from_watchlist,
-            analyze_watchlist_asset.name: analyze_watchlist_asset,
-            list_my_watchlist.name: list_my_watchlist,
-            get_latest_price.name: get_latest_price,
-        }
+        # Build tool map from chat tools + dispatcher tools
+        tool_map = {t.name: t for t in (get_all_chat_tools() + [lookup_portfolio, lookup_pending_decisions])}
         for call in response.tool_calls:
             tool_name = call["name"]
             tool = tool_map.get(tool_name)

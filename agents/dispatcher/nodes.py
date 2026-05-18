@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import tool
+from agents.hooks import pre_action_check, ActionType, HookResult
 from .prompts import DISPATCHER_SYSTEM, format_alert_for_dispatcher, format_portfolio_for_prompt
 from .skills.loader import get_skill_loader
 from ..research_analyst.agent import research_opportunity
@@ -12,6 +13,7 @@ from ..trade_executor.agent import draft_order
 from ..risk_manager.rules import check_risk
 from ..portfolio_tracker.tracker import update_portfolio, format_portfolio_summary
 from ..llm import get_single_llm
+from ..autonomy import check_trade_autonomy
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +289,7 @@ async def risk_manager_node(state: dict, llm) -> dict:
 async def approval_router(state: dict, llm) -> dict:
     """
     Format submitted decisions for human review.
-    Sends to dashboard + Telegram for approval.
+    Now includes pre-action hooks for risk validation.
     """
     decisions = state.get("decisions", [])
     pending_approvals = []
@@ -297,6 +299,21 @@ async def approval_router(state: dict, llm) -> dict:
             continue
         alerts = d.get("alerts", [])
         alert = alerts[0] if alerts else {}
+
+        # Run pre-action hook before adding to pending
+        hook_result = await pre_action_check(
+            action=f"submit decision for {alert.get('symbol', 'unknown')}",
+            action_type=ActionType.SUBMIT_DECISION,
+            target={
+                "symbol": alert.get("symbol", ""),
+                "confidence": d.get("confidence", 0.5),
+                "risk_level": d.get("risk_check", "medium"),
+            },
+            context={"decision": d, "alert": alert},
+        )
+
+        # Store hook warnings in decision for logging
+        d["hook_warnings"] = hook_result.warnings
 
         pending_approvals.append({
             "symbol": alert.get("symbol", ""),
@@ -308,6 +325,7 @@ async def approval_router(state: dict, llm) -> dict:
             "live_price": d.get("live_price", ""),
             "risk_check": d.get("risk_check", ""),
             "confidence": d.get("confidence", 0.5),
+            "hook_warnings": hook_result.warnings,
         })
 
     return {"pending_approval": pending_approvals}
@@ -318,8 +336,8 @@ async def approval_router(state: dict, llm) -> dict:
 async def trade_executor_node(state: dict, llm) -> dict:
     """
     Draft an order based on approved research.
-    Calls draft_order() from trade_executor/agent.py (was previously unused).
-    Phase 1: drafts only, no auto-execution.
+    Phase 1: Drafts only, no auto-execution.
+    Phase 2: Will check autonomy before execution.
     """
     decisions = state.get("decisions", [])
     draft_orders = {}
@@ -332,15 +350,54 @@ async def trade_executor_node(state: dict, llm) -> dict:
         if not research_result:
             continue
 
+        # Get trade details from alert
+        alerts = d.get("alerts", [{}])
+        alert = alerts[0] if alerts else {}
+        symbol = alert.get("symbol", "")
+        source = alert.get("source", "unknown")
+        asset_class = _source_to_asset_class(source)
+
+        # Extract price and quantity from decision
+        quantity = d.get("quantity", 1.0)
+        price = d.get("live_price", 0.0) or 0.0
+        confidence = d.get("confidence", 0.5)
+        risk_level = "medium"  # default
+
+        # Check autonomy (Phase 2 - currently disabled)
+        autonomy_result = check_trade_autonomy(
+            symbol=symbol,
+            quantity=quantity,
+            price=price,
+            confidence=confidence,
+            risk_level=risk_level,
+            asset_class=asset_class,
+            exchange=alert.get("exchange", ""),
+        )
+
+        # Log autonomy decision
+        logger.info(
+            f"[trade_executor] Autonomy check for {symbol}: "
+            f"{'APPROVED' if autonomy_result.can_auto_execute else 'REJECTED'} - "
+            f"{autonomy_result.reason}"
+        )
+
+        # Store autonomy result for debugging/audit
+        d["autonomy_check"] = {
+            "can_auto_execute": autonomy_result.can_auto_execute,
+            "reason": autonomy_result.reason,
+        }
+
+        # Phase 1: Draft only, never execute automatically
         try:
-            order_draft = await draft_order(research_result)
-            draft_orders[d.get("alerts", [{}])[0].get("symbol", "")] = order_draft
+            decision_id = d.get("id")
+            order_draft = await draft_order(research_result, decision_id)
+            draft_orders[symbol] = order_draft
             d["order_draft"] = order_draft
         except Exception as e:
             logger.error(f"[trade_executor] Error drafting order: {e}")
-            draft_orders[d.get("alerts", [{}])[0].get("symbol", "")] = f"Draft failed: {e}"
+            draft_orders[symbol] = f"Draft failed: {e}"
 
-    return {"draft_orders": draft_orders}
+    return {"draft_orders": draft_orders, "decisions": decisions}
 
 
 # ---- Log and Discard Node ----
