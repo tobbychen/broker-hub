@@ -22,7 +22,7 @@ agents:
     max_correlation: 0.80
 
   autonomy:
-    enabled: false  # Phase 1: disabled, all trades need human approval
+    enabled: true  # Phase 2: small positions can auto-execute
     auto_approve:
       max_position_value: 10000  # ¥10K max for auto-approve
       min_confidence: 0.85       # 85% confidence minimum

@@ -20,15 +20,43 @@ async def test_hook_result_dataclass():
 
 
 @pytest.mark.asyncio
-async def test_check_autonomy_disabled():
-    """Phase 1: autonomy should be disabled."""
+async def test_check_autonomy_approved():
+    """Phase 2: small crypto trade should be approved."""
     result = await check_autonomy(
         action="auto approve trade",
-        target={},
+        target={
+            "symbol": "BTC",
+            "quantity": 0.01,
+            "price": 80000,  # 0.01 * 80000 = 800 < 10000 limit
+            "confidence": 0.9,
+            "risk_level": "low",
+            "asset_class": "crypto",
+            "exchange": "Binance",
+        },
+        context={},
+    )
+    assert result.approved is True
+    assert "All conditions met" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_check_autonomy_rejected_large_position():
+    """Large positions should be rejected."""
+    result = await check_autonomy(
+        action="auto approve trade",
+        target={
+            "symbol": "BTC",
+            "quantity": 0.5,  # 0.5 * 80000 = 40000 > 10000 limit
+            "price": 80000,
+            "confidence": 0.9,
+            "risk_level": "low",
+            "asset_class": "crypto",
+            "exchange": "Binance",
+        },
         context={},
     )
     assert result.approved is False
-    assert "disabled" in result.reason.lower() or "Phase 1" in result.reason
+    assert "max_position_value" in result.warnings
 
 
 @pytest.mark.asyncio

@@ -336,8 +336,7 @@ async def approval_router(state: dict, llm) -> dict:
 async def trade_executor_node(state: dict, llm) -> dict:
     """
     Draft an order based on approved research.
-    Phase 1: Drafts only, no auto-execution.
-    Phase 2: Will check autonomy before execution.
+    Phase 2: Auto-execute if autonomy conditions are met.
     """
     decisions = state.get("decisions", [])
     draft_orders = {}
@@ -387,7 +386,7 @@ async def trade_executor_node(state: dict, llm) -> dict:
             "reason": autonomy_result.reason,
         }
 
-        # Phase 1: Draft only, never execute automatically
+        # Draft the order first (always, for human review fallback)
         try:
             decision_id = d.get("id")
             order_draft = await draft_order(research_result, decision_id)
@@ -396,6 +395,49 @@ async def trade_executor_node(state: dict, llm) -> dict:
         except Exception as e:
             logger.error(f"[trade_executor] Error drafting order: {e}")
             draft_orders[symbol] = f"Draft failed: {e}"
+            order_draft = f"Draft failed: {e}"
+
+        # Phase 2: Auto-execute if autonomy approves
+        if autonomy_result.can_auto_execute:
+            try:
+                from agents.broker import get_default_broker
+                from agents.broker.interface import OrderDraft, OrderSide, OrderType
+
+                broker = get_default_broker()
+                if broker and await broker.is_connected():
+                    # Map source to exchange
+                    exchange_map = {
+                        "binance": "Binance",
+                        "okx": "OKX",
+                        "akshare": "SSE/SZSE",
+                        "yfinance": "NASDAQ",
+                    }
+                    exchange = exchange_map.get(source.lower(), alert.get("exchange", ""))
+
+                    # Determine order side from research result
+                    side = OrderSide.BUY
+                    if "sell" in research_result.lower()[:100]:
+                        side = OrderSide.SELL
+
+                    # Create order draft for broker
+                    broker_order = OrderDraft(
+                        symbol=symbol,
+                        side=side,
+                        quantity=quantity,
+                        order_type=OrderType.MARKET,
+                        exchange=exchange,
+                        asset_class=asset_class,
+                    )
+
+                    # Execute the order
+                    result = await broker.submit_order(broker_order)
+                    logger.info(f"[trade_executor] Auto-executed {symbol}: order_id={result.order_id}")
+                    d["auto_executed"] = True
+                    d["execution_result"] = result
+                else:
+                    logger.warning(f"[trade_executor] Broker not connected, skipping auto-execution")
+            except Exception as e:
+                logger.error(f"[trade_executor] Auto-execution error: {e}")
 
     return {"draft_orders": draft_orders, "decisions": decisions}
 

@@ -98,29 +98,36 @@ async def check_autonomy(
     target: dict,
     context: dict,
 ) -> HookResult:
-    """Check if action qualifies for autonomous execution (Phase 2).
-
-    Phase 1: This always returns needs_review=True (disabled)
-    """
+    """Check if action qualifies for autonomous execution (Phase 2)."""
     try:
-        from .config import get_agent_settings
-        settings = get_agent_settings()
-        autonomy_cfg = settings.get("autonomy", {})
+        from .autonomy import check_trade_autonomy
 
-        if not autonomy_cfg.get("enabled", False):
-            return HookResult(
-                approved=False,
-                action=action,
-                reason="Autonomous execution is disabled (Phase 1)",
-                needs_review=True,
-                warnings=["Phase 1: All trades require human approval"],
-            )
+        # Get trade parameters from target
+        symbol = target.get("symbol", "UNKNOWN")
+        quantity = target.get("quantity", 0)
+        price = target.get("price", 0)
+        confidence = target.get("confidence", 0.5)
+        risk_level = target.get("risk_level", "medium")
+        asset_class = target.get("asset_class", "stock")
+        exchange = target.get("exchange", "")
+
+        # Check autonomy conditions
+        result = check_trade_autonomy(
+            symbol=symbol,
+            quantity=quantity,
+            price=price,
+            confidence=confidence,
+            risk_level=risk_level,
+            asset_class=asset_class,
+            exchange=exchange,
+        )
 
         return HookResult(
-            approved=False,
+            approved=result.can_auto_execute,
             action=action,
-            reason="Autonomy not yet configured",
-            needs_review=True,
+            reason=result.reason,
+            needs_review=not result.can_auto_execute,
+            warnings=list(result.conditions_failed.keys()) if result.conditions_failed else [],
         )
     except Exception as e:
         return HookResult(
